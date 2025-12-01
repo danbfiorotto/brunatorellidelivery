@@ -1,6 +1,9 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { LanguageProvider } from './context/LanguageContext';
+import { CurrencyProvider } from './context/CurrencyContext';
+import { ThemeProvider } from './context/ThemeContext';
 import MainLayout from './components/Layout/MainLayout';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
@@ -9,7 +12,6 @@ import Reports from './pages/Reports';
 import Clinics from './pages/Clinics';
 import Patients from './pages/Patients';
 import PatientDetails from './pages/PatientDetails';
-import AiAssistant from './pages/AiAssistant';
 import Profile from './pages/Profile';
 
 const ProtectedRoute = ({ children }) => {
@@ -29,26 +31,31 @@ const ProtectedRoute = ({ children }) => {
 const App = () => {
   return (
     <AuthProvider>
-      <Router>
-        <Routes>
-          <Route path="/login" element={<Login />} />
+      <LanguageProvider>
+        <CurrencyProvider>
+          <ThemeProvider>
+            <Router>
+          <Routes>
+            <Route path="/login" element={<Login />} />
 
-          <Route path="/" element={
-            <ProtectedRoute>
-              <MainLayout />
-            </ProtectedRoute>
-          }>
-            <Route index element={<Dashboard />} />
-            <Route path="appointments" element={<Appointments />} />
-            <Route path="reports" element={<Reports />} />
-            <Route path="clinics" element={<Clinics />} />
-            <Route path="patients" element={<Patients />} />
-            <Route path="patients/:id" element={<PatientDetails />} />
-            <Route path="ai-assistant" element={<AiAssistant />} />
-            <Route path="profile" element={<Profile />} />
-          </Route>
-        </Routes>
-      </Router>
+            <Route path="/" element={
+              <ProtectedRoute>
+                <MainLayout />
+              </ProtectedRoute>
+            }>
+              <Route index element={<Dashboard />} />
+              <Route path="appointments" element={<Appointments />} />
+              <Route path="reports" element={<Reports />} />
+              <Route path="clinics" element={<Clinics />} />
+              <Route path="patients" element={<Patients />} />
+              <Route path="patients/:id" element={<PatientDetails />} />
+              <Route path="profile" element={<Profile />} />
+            </Route>
+          </Routes>
+        </Router>
+          </ThemeProvider>
+        </CurrencyProvider>
+      </LanguageProvider>
     </AuthProvider>
   );
 };

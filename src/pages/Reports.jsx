@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Bar, Pie } from 'react-chartjs-2';
 import {
     Chart as ChartJS,
@@ -10,10 +10,18 @@ import {
     Legend,
     ArcElement,
 } from 'chart.js';
-import { Download, Calendar } from 'lucide-react';
+import { Download, Calendar, Filter } from 'lucide-react';
 import jsPDF from 'jspdf';
+import { motion } from 'framer-motion';
 import Card from '../components/UI/Card';
 import Button from '../components/UI/Button';
+import Modal from '../components/UI/Modal';
+import Badge from '../components/UI/Badge';
+import DateInput from '../components/UI/DateInput';
+import { getReportsData } from '../services/api';
+import { useLanguage } from '../context/LanguageContext';
+import { useCurrency } from '../context/CurrencyContext';
+import { calculateReceivedValue, formatDate, formatCurrency } from '../lib/utils';
 
 ChartJS.register(
     CategoryScale,
@@ -26,129 +34,714 @@ ChartJS.register(
 );
 
 const Reports = () => {
+    const { t } = useLanguage();
+    const { currency } = useCurrency();
     const [period, setPeriod] = useState('month');
+    const [dateType, setDateType] = useState('appointment'); // 'appointment' ou 'payment'
+    const [isCustomPeriodOpen, setIsCustomPeriodOpen] = useState(false);
+    const [customStartDate, setCustomStartDate] = useState('');
+    const [customEndDate, setCustomEndDate] = useState('');
+    const [reportsData, setReportsData] = useState([]);
+    const [clinicStats, setClinicStats] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [periodDropdownOpen, setPeriodDropdownOpen] = useState(false);
+    const [dateTypeDropdownOpen, setDateTypeDropdownOpen] = useState(false);
+    const [stats, setStats] = useState({
+        totalRevenue: 0,
+        ticketMedio: 0,
+        totalAppointments: 0,
+        revenueByAppointment: 0,
+        revenueByPayment: 0
+    });
 
-    // Mock Data
+    const periodOptions = [
+        { value: '7days', label: t('reports.last7Days') },
+        { value: 'month', label: t('reports.currentMonth') },
+        { value: 'last_month', label: t('reports.lastMonth') },
+        { value: 'custom', label: t('reports.customPeriod') }
+    ];
+
+    const dateTypeOptions = [
+        { value: 'appointment', label: t('reports.byAppointmentDate') },
+        { value: 'payment', label: t('reports.byPaymentDate') }
+    ];
+
+    const getPeriodLabel = () => {
+        return periodOptions.find(opt => opt.value === period)?.label || t('reports.currentMonth');
+    };
+
+    const getDateTypeLabel = () => {
+        return dateTypeOptions.find(opt => opt.value === dateType)?.label || t('reports.byAppointmentDate');
+    };
+
+    useEffect(() => {
+        if (period !== 'custom' || (customStartDate && customEndDate)) {
+            loadReportsData();
+        }
+    }, [period, dateType]);
+
+    const loadReportsData = async () => {
+        try {
+            setLoading(true);
+            const now = new Date();
+            let startDate, endDate;
+
+            if (period === 'custom' && customStartDate && customEndDate) {
+                startDate = customStartDate;
+                endDate = customEndDate;
+            } else if (period === '7days') {
+                const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+                startDate = weekAgo.toISOString().split('T')[0];
+                endDate = now.toISOString().split('T')[0];
+            } else if (period === 'month') {
+                startDate = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+                endDate = now.toISOString().split('T')[0];
+            } else if (period === 'last_month') {
+                const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+                const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0);
+                startDate = lastMonth.toISOString().split('T')[0];
+                endDate = lastMonthEnd.toISOString().split('T')[0];
+            } else {
+                startDate = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+                endDate = now.toISOString().split('T')[0];
+            }
+
+            const data = await getReportsData(startDate, endDate);
+
+            // Calculate stats based on date type
+            let filteredData = data;
+            if (dateType === 'payment') {
+                // Filter by payment_date for paid appointments, but include all appointments in the date range for pending calculation
+                filteredData = data.filter(a => {
+                    // Include paid appointments with payment_date in the range
+                    if (a.status === 'paid' && a.payment_date) {
+                        return a.payment_date >= startDate && a.payment_date <= endDate;
+                    }
+                    // Include pending appointments that fall in the date range (for calculating pending values)
+                    if (a.status === 'pending' || a.status === 'scheduled') {
+                        return a.date >= startDate && a.date <= endDate;
+                    }
+                    return false;
+                });
+            } else {
+                // Filter by appointment date
+                filteredData = data.filter(a => a.date >= startDate && a.date <= endDate);
+            }
+
+            const paidAppointments = filteredData.filter(a => a.status === 'paid');
+            const totalRevenue = paidAppointments.reduce((sum, a) => sum + calculateReceivedValue(a), 0);
+            const totalAppointments = filteredData.length;
+            const ticketMedio = totalAppointments > 0 ? totalRevenue / totalAppointments : 0;
+
+            // Calculate revenue by appointment date (services rendered) - using received value
+            const revenueByAppointment = data
+                .filter(a => a.date >= startDate && a.date <= endDate && a.status === 'paid')
+                .reduce((sum, a) => sum + calculateReceivedValue(a), 0);
+
+            // Calculate revenue by payment date (money received) - using received value
+            const revenueByPayment = data
+                .filter(a => a.status === 'paid' && a.payment_date && a.payment_date >= startDate && a.payment_date <= endDate)
+                .reduce((sum, a) => sum + calculateReceivedValue(a), 0);
+
+            setStats({
+                totalRevenue,
+                ticketMedio,
+                totalAppointments,
+                revenueByAppointment,
+                revenueByPayment
+            });
+            
+            // Calculate clinic stats from filtered data
+            const clinicMap = {};
+            filteredData.forEach(apt => {
+                const clinicId = apt.clinics?.id || 'no-clinic';
+                const clinicName = apt.clinics?.name || 'Sem clínica';
+                
+                if (!clinicMap[clinicId]) {
+                    clinicMap[clinicId] = {
+                        id: clinicId,
+                        name: clinicName,
+                        revenue: 0,
+                        appointments: 0,
+                        paid: 0
+                    };
+                }
+                
+                clinicMap[clinicId].appointments++;
+                if (apt.status === 'paid') {
+                    clinicMap[clinicId].revenue += calculateReceivedValue(apt);
+                    clinicMap[clinicId].paid++;
+                }
+            });
+            
+            const calculatedClinicStats = Object.values(clinicMap)
+                .map(clinic => ({
+                    ...clinic,
+                    ticket: clinic.paid > 0 ? clinic.revenue / clinic.paid : 0
+                }))
+                .sort((a, b) => b.revenue - a.revenue);
+            
+            setClinicStats(calculatedClinicStats);
+            
+            // Update reportsData to use filtered data
+            setReportsData(filteredData);
+        } catch (error) {
+            console.error('Error loading reports data:', error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // Calculate bar chart data
+    const getBarData = () => {
+        if (period === '7days') {
+            const days = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
+            const dayMap = {};
+            
+            reportsData.forEach(apt => {
+                // Use payment_date if dateType is 'payment', otherwise use appointment date
+                const dateString = dateType === 'payment' && apt.payment_date 
+                    ? apt.payment_date 
+                    : apt.date;
+                // Parse ISO date string (YYYY-MM-DD) to get day of week
+                const dateParts = dateString.split('-');
+                if (dateParts.length === 3) {
+                    const year = parseInt(dateParts[0], 10);
+                    const month = parseInt(dateParts[1], 10) - 1; // Month is 0-indexed
+                    const day = parseInt(dateParts[2], 10);
+                    const dateToUse = new Date(year, month, day);
+                    const dayIndex = dateToUse.getDay() === 0 ? 6 : dateToUse.getDay() - 1;
+                    const dayName = days[dayIndex];
+                    
+                    if (!dayMap[dayName]) {
+                        dayMap[dayName] = { received: 0, pending: 0 };
+                    }
+                    
+                    if (apt.status === 'paid') {
+                        dayMap[dayName].received += calculateReceivedValue(apt);
+                    } else if (apt.status === 'pending' || apt.status === 'scheduled') {
+                        // For pending appointments, the pending amount is the total value
+                        const totalValue = parseFloat(apt.value || 0);
+                        dayMap[dayName].pending += totalValue;
+                    }
+                }
+            });
+
+            return {
+                labels: days,
+                received: days.map(day => dayMap[day]?.received || 0),
+                pending: days.map(day => dayMap[day]?.pending || 0)
+            };
+        } else {
+            // Group by month
+            const monthMap = {};
+            reportsData.forEach(apt => {
+                // Use payment_date if dateType is 'payment', otherwise use appointment date
+                const dateString = dateType === 'payment' && apt.payment_date 
+                    ? apt.payment_date 
+                    : apt.date;
+                // Parse ISO date string (YYYY-MM-DD) to get month
+                const dateParts = dateString.split('-');
+                if (dateParts.length === 3) {
+                    const year = parseInt(dateParts[0], 10);
+                    const monthNum = parseInt(dateParts[1], 10) - 1; // Month is 0-indexed
+                    const day = parseInt(dateParts[2], 10);
+                    const dateToUse = new Date(year, monthNum, day);
+                    const month = dateToUse.toLocaleDateString('pt-BR', { month: 'short' });
+                    
+                    if (!monthMap[month]) {
+                        monthMap[month] = { received: 0, pending: 0 };
+                    }
+                    
+                    if (apt.status === 'paid') {
+                        monthMap[month].received += calculateReceivedValue(apt);
+                    } else if (apt.status === 'pending' || apt.status === 'scheduled') {
+                        // For pending appointments, the pending amount is the total value
+                        const totalValue = parseFloat(apt.value || 0);
+                        monthMap[month].pending += totalValue;
+                    }
+                }
+            });
+
+            const months = Object.keys(monthMap);
+            return {
+                labels: months,
+                received: months.map(month => monthMap[month].received),
+                pending: months.map(month => monthMap[month].pending)
+            };
+        }
+    };
+
+    const barChartData = getBarData();
+
     const barData = {
-        labels: ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun'],
+        labels: barChartData.labels,
         datasets: [
             {
                 label: 'Recebido',
-                data: [12000, 19000, 3000, 5000, 2000, 3000],
-                backgroundColor: 'rgba(75, 192, 192, 0.5)',
+                data: barChartData.received,
+                backgroundColor: 'rgba(16, 185, 129, 0.8)',
+                hoverBackgroundColor: 'rgba(5, 150, 105, 1)',
+                borderRadius: 8,
             },
             {
                 label: 'Pendente',
-                data: [2000, 3000, 2000, 3000, 1000, 2000],
-                backgroundColor: 'rgba(255, 99, 132, 0.5)',
+                data: barChartData.pending,
+                backgroundColor: 'rgba(245, 158, 11, 0.8)',
+                hoverBackgroundColor: 'rgba(217, 119, 6, 1)',
+                borderRadius: 8,
             },
         ],
     };
 
+    // Calculate pie chart data from clinic stats
+    const totalRevenue = clinicStats.reduce((sum, c) => sum + c.revenue, 0);
     const pieData = {
-        labels: ['Clínica A', 'Clínica B', 'Clínica C'],
+        labels: clinicStats.map(c => c.name),
         datasets: [
             {
-                data: [12, 19, 3],
+                data: clinicStats.map(c => totalRevenue > 0 ? Math.round((c.revenue / totalRevenue) * 100) : 0),
                 backgroundColor: [
-                    'rgba(255, 99, 132, 0.5)',
-                    'rgba(54, 162, 235, 0.5)',
-                    'rgba(255, 206, 86, 0.5)',
+                    'rgba(14, 165, 233, 0.8)',
+                    'rgba(16, 185, 129, 0.8)',
+                    'rgba(139, 92, 246, 0.8)',
+                    'rgba(245, 158, 11, 0.8)',
+                    'rgba(236, 72, 153, 0.8)',
+                    'rgba(59, 130, 246, 0.8)',
                 ],
                 borderColor: [
-                    'rgba(255, 99, 132, 1)',
-                    'rgba(54, 162, 235, 1)',
-                    'rgba(255, 206, 86, 1)',
+                    'rgba(14, 165, 233, 1)',
+                    'rgba(16, 185, 129, 1)',
+                    'rgba(139, 92, 246, 1)',
+                    'rgba(245, 158, 11, 1)',
+                    'rgba(236, 72, 153, 1)',
+                    'rgba(59, 130, 246, 1)',
                 ],
-                borderWidth: 1,
+                borderWidth: 2,
             },
         ],
+    };
+
+    const chartOptions = {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: {
+                position: 'top',
+                labels: {
+                    usePointStyle: true,
+                    padding: 15,
+                    font: { size: 12, weight: '600' }
+                }
+            },
+            tooltip: {
+                backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                titleColor: '#1e293b',
+                bodyColor: '#475569',
+                borderColor: '#e2e8f0',
+                borderWidth: 1,
+                padding: 12,
+            }
+        },
+        scales: {
+            y: {
+                beginAtZero: true,
+                grid: { color: '#f1f5f9', drawBorder: false },
+                ticks: { color: '#94a3b8' }
+            },
+            x: {
+                grid: { display: false },
+                ticks: { color: '#94a3b8' }
+            }
+        }
+    };
+
+    const pieOptions = {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: {
+                position: 'right',
+                labels: {
+                    usePointStyle: true,
+                    padding: 15,
+                    font: { size: 12, weight: '600' }
+                }
+            },
+            tooltip: {
+                callbacks: {
+                    label: function(context) {
+                        const label = context.label || '';
+                        const percentage = context.parsed || 0;
+                        // Calculate actual revenue value from percentage
+                        const clinicIndex = context.dataIndex;
+                        const clinic = clinicStats[clinicIndex];
+                        const revenueValue = clinic ? clinic.revenue : 0;
+                        return `${label}: ${percentage}% (${formatCurrency(revenueValue, currency)})`;
+                    }
+                }
+            }
+        }
     };
 
     const handleExportPDF = () => {
         const doc = new jsPDF();
+        doc.setFontSize(18);
         doc.text('Relatório Financeiro', 20, 20);
-        doc.text(`Período: ${period}`, 20, 30);
-        doc.text('Total Faturado: R$ 45.000,00', 20, 40);
-        doc.save('relatorio.pdf');
+        doc.setFontSize(12);
+        
+        let periodLabel = '';
+        if (period === '7days') periodLabel = 'Últimos 7 dias';
+        else if (period === 'month') periodLabel = 'Mês atual';
+        else if (period === 'last_month') periodLabel = 'Mês anterior';
+        else if (period === 'custom') periodLabel = `De ${customStartDate} até ${customEndDate}`;
+        
+        doc.text(`Período: ${periodLabel}`, 20, 35);
+        doc.text(`Total Faturado: ${formatCurrency(stats.totalRevenue, currency)}`, 20, 45);
+        doc.text(`Ticket Médio: ${formatCurrency(stats.ticketMedio, currency)}`, 20, 55);
+        doc.text(`Total de Atendimentos: ${stats.totalAppointments}`, 20, 65);
+        
+        let y = 80;
+        doc.text('Distribuição por Clínica:', 20, y);
+        y += 10;
+        clinicStats.forEach((clinic, i) => {
+            if (y > 270) {
+                doc.addPage();
+                y = 20;
+            }
+            const percentage = stats.totalRevenue > 0 ? Math.round((clinic.revenue / stats.totalRevenue) * 100) : 0;
+            doc.text(`${i + 1}. ${clinic.name}: ${percentage}% - ${formatCurrency(clinic.revenue, currency)}`, 25, y);
+            y += 8;
+        });
+        
+        y += 5;
+        if (y > 270) {
+            doc.addPage();
+            y = 20;
+        }
+        doc.text('Todos os Atendimentos:', 20, y);
+        y += 10;
+        reportsData.forEach((apt, i) => {
+            if (y > 270) {
+                doc.addPage();
+                y = 20;
+            }
+            doc.text(`${formatDate(apt.date)} - ${apt.patients?.name || 'Sem paciente'} - ${formatCurrency(parseFloat(apt.value), apt.currency || currency)}`, 25, y);
+            y += 8;
+        });
+        
+        const fileName = `relatorio-${periodLabel.replace(/\s+/g, '-')}-${new Date().toISOString().split('T')[0]}.pdf`;
+        doc.save(fileName);
     };
 
     return (
-        <div className="space-y-6">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div>
-                    <h2 className="text-2xl font-bold text-gray-900">Relatórios</h2>
-                    <p className="text-gray-500">Análise financeira e de produtividade</p>
-                </div>
-                <div className="flex gap-2">
-                    <select
-                        className="px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                        value={period}
-                        onChange={(e) => setPeriod(e.target.value)}
-                    >
-                        <option value="7days">Últimos 7 dias</option>
-                        <option value="month">Este Mês</option>
-                        <option value="last_month">Mês Passado</option>
-                        <option value="year">Este Ano</option>
-                    </select>
-                    <Button onClick={handleExportPDF} variant="outline" className="flex items-center gap-2">
-                        <Download size={20} />
-                        Exportar PDF
-                    </Button>
+        <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="space-y-6"
+        >
+            <div className="bg-gradient-to-r from-sky-500 to-emerald-500 dark:from-sky-600 dark:to-emerald-600 rounded-2xl p-6 md:p-8 text-white mb-8 shadow-xl">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div>
+                        <h2 className="text-3xl md:text-4xl font-bold mb-2">{t('reports.title')}</h2>
+                        <p className="text-white/90">{t('reports.subtitle')}</p>
+                    </div>
+                    <div className="flex flex-wrap gap-3">
+                        {/* Period Dropdown */}
+                        <div className="relative">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setPeriodDropdownOpen(!periodDropdownOpen);
+                                    setDateTypeDropdownOpen(false);
+                                }}
+                                className="pl-10 pr-10 py-3 bg-white/20 backdrop-blur-sm border border-white/30 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-white/50 hover:bg-white/30 transition-colors flex items-center gap-2 min-w-[200px]"
+                            >
+                                <Filter className="absolute left-3 text-white/80" size={18} />
+                                <span className="flex-1 text-left">{getPeriodLabel()}</span>
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                </svg>
+                            </button>
+                            {periodDropdownOpen && (
+                                <>
+                                    <div 
+                                        className="fixed inset-0 z-10" 
+                                        onClick={() => setPeriodDropdownOpen(false)}
+                                    />
+                                    <div className="absolute top-full left-0 mt-2 w-full bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-200 dark:border-gray-700 z-20 overflow-hidden">
+                                        {periodOptions.map((option) => (
+                                            <button
+                                                key={option.value}
+                                                type="button"
+                                                onClick={() => {
+                                                    if (option.value === 'custom') {
+                                                        setIsCustomPeriodOpen(true);
+                                                        setPeriodDropdownOpen(false);
+                                                    } else {
+                                                        setPeriod(option.value);
+                                                        setPeriodDropdownOpen(false);
+                                                    }
+                                                }}
+                                                className={`w-full px-4 py-3 text-left text-sm transition-colors ${
+                                                    period === option.value
+                                                        ? 'bg-sky-50 dark:bg-sky-900/30 text-sky-700 dark:text-sky-300 font-medium'
+                                                        : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
+                                                }`}
+                                            >
+                                                {option.label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </>
+                            )}
+                        </div>
+
+                        {/* Date Type Dropdown */}
+                        <div className="relative">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setDateTypeDropdownOpen(!dateTypeDropdownOpen);
+                                    setPeriodDropdownOpen(false);
+                                }}
+                                className="pl-4 pr-10 py-3 bg-white/20 backdrop-blur-sm border border-white/30 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-white/50 hover:bg-white/30 transition-colors flex items-center gap-2 text-sm min-w-[220px]"
+                                title="Escolha se quer ver por data do atendimento ou data do pagamento"
+                            >
+                                <span className="flex-1 text-left">{getDateTypeLabel()}</span>
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                </svg>
+                            </button>
+                            {dateTypeDropdownOpen && (
+                                <>
+                                    <div 
+                                        className="fixed inset-0 z-10" 
+                                        onClick={() => setDateTypeDropdownOpen(false)}
+                                    />
+                                    <div className="absolute top-full left-0 mt-2 w-full bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-200 dark:border-gray-700 z-20 overflow-hidden">
+                                        {dateTypeOptions.map((option) => (
+                                            <button
+                                                key={option.value}
+                                                type="button"
+                                                onClick={() => {
+                                                    setDateType(option.value);
+                                                    setDateTypeDropdownOpen(false);
+                                                }}
+                                                className={`w-full px-4 py-3 text-left text-sm transition-colors ${
+                                                    dateType === option.value
+                                                        ? 'bg-sky-50 dark:bg-sky-900/30 text-sky-700 dark:text-sky-300 font-medium'
+                                                        : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
+                                                }`}
+                                            >
+                                                {option.label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </>
+                            )}
+                        </div>
+
+                        <Button 
+                            onClick={handleExportPDF} 
+                            className="bg-white text-sky-600 hover:bg-gray-50 shadow-lg gap-2"
+                        >
+                            <Download size={18} />
+                            Exportar PDF
+                        </Button>
+                    </div>
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <Card title="Total Faturado">
-                    <p className="text-3xl font-bold text-gray-900">R$ 45.000,00</p>
-                    <p className="text-sm text-green-600 mt-1">+15% vs período anterior</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+                <Card className="bg-gradient-to-br from-emerald-50 to-emerald-100/50 border-emerald-200">
+                    <div className="flex justify-between items-start">
+                        <div>
+                            <p className="text-sm font-semibold text-emerald-700 mb-1">
+                                {dateType === 'payment' ? '💰 Receita Recebida' : '📅 Serviços Prestados'}
+                            </p>
+                            <p className="text-3xl font-bold text-emerald-900 mb-1">
+                                {formatCurrency(stats.totalRevenue, currency)}
+                            </p>
+                            {dateType === 'appointment' && stats.revenueByPayment > 0 && (
+                                <p className="text-xs text-emerald-600 mt-1">
+                                    💰 Recebido no período: {formatCurrency(stats.revenueByPayment, currency)}
+                                </p>
+                            )}
+                            {dateType === 'payment' && stats.revenueByAppointment > 0 && (
+                                <p className="text-xs text-emerald-600 mt-1">
+                                    📅 Prestado no período: {formatCurrency(stats.revenueByAppointment, currency)}
+                                </p>
+                            )}
+                            {loading && <p className="text-xs text-emerald-600 mt-2">Carregando...</p>}
+                        </div>
+                    </div>
                 </Card>
-                <Card title="Ticket Médio">
-                    <p className="text-3xl font-bold text-gray-900">R$ 450,00</p>
-                    <p className="text-sm text-gray-500 mt-1">Por atendimento</p>
+                <Card className="bg-gradient-to-br from-sky-50 to-sky-100/50 border-sky-200">
+                    <div className="flex justify-between items-start">
+                        <div>
+                            <p className="text-sm font-semibold text-sky-700 mb-1">Ticket Médio</p>
+                            <p className="text-3xl font-bold text-sky-900 mb-1">
+                                {formatCurrency(stats.ticketMedio, currency)}
+                            </p>
+                            <p className="text-xs text-sky-600 mt-2">Por atendimento</p>
+                        </div>
+                    </div>
                 </Card>
-                <Card title="Total Atendimentos">
-                    <p className="text-3xl font-bold text-gray-900">124</p>
-                    <p className="text-sm text-green-600 mt-1">+8 novos pacientes</p>
-                </Card>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <Card title="Receita vs Pendente">
-                    <Bar data={barData} />
-                </Card>
-                <Card title="Distribuição por Clínica">
-                    <div className="h-64 flex justify-center">
-                        <Pie data={pieData} />
+                <Card className="bg-gradient-to-br from-violet-50 to-violet-100/50 border-violet-200">
+                    <div className="flex justify-between items-start">
+                        <div>
+                            <p className="text-sm font-semibold text-violet-700 mb-1">Total Atendimentos</p>
+                            <p className="text-3xl font-bold text-violet-900 mb-1">{stats.totalAppointments}</p>
+                            {loading && <p className="text-xs text-violet-600 mt-2">Carregando...</p>}
+                        </div>
                     </div>
                 </Card>
             </div>
 
-            <Card title="Atendimentos Recentes">
-                <div className="overflow-x-auto">
-                    <table className="w-full text-left">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <Card>
+                    <div className="mb-4">
+                        <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-1">Recebido vs. Pendente</h3>
+                        <p className="text-sm text-slate-500 dark:text-gray-400">Comparativo de valores no período</p>
+                    </div>
+                    <div className="h-64 sm:h-80">
+                        <Bar data={barData} options={chartOptions} />
+                    </div>
+                </Card>
+                <Card>
+                    <div className="mb-4">
+                        <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-1">Distribuição por Clínica</h3>
+                        <p className="text-sm text-slate-500 dark:text-gray-400">Percentual e valores faturados</p>
+                    </div>
+                    <div className="h-64 sm:h-80">
+                        <Pie data={pieData} options={pieOptions} />
+                    </div>
+                </Card>
+            </div>
+
+            <Card>
+                <div className="mb-4">
+                    <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-1">Atendimentos Recentes</h3>
+                    <p className="text-sm text-slate-500 dark:text-gray-400">Últimos procedimentos realizados</p>
+                </div>
+                <div className="overflow-x-auto -mx-2 sm:mx-0">
+                    <table className="w-full text-left min-w-[640px] sm:min-w-0">
                         <thead>
-                            <tr className="border-b border-gray-100">
-                                <th className="pb-3 font-semibold text-gray-600">Data</th>
-                                <th className="pb-3 font-semibold text-gray-600">Paciente</th>
-                                <th className="pb-3 font-semibold text-gray-600">Clínica</th>
-                                <th className="pb-3 font-semibold text-gray-600 text-right">Valor</th>
+                            <tr className="border-b border-gray-100 dark:border-gray-700">
+                                <th className="pb-3 px-3 sm:px-4 font-semibold text-slate-700 dark:text-gray-200 text-xs sm:text-sm">Data</th>
+                                <th className="pb-3 px-3 sm:px-4 font-semibold text-slate-700 dark:text-gray-200 text-xs sm:text-sm">Paciente</th>
+                                <th className="pb-3 px-3 sm:px-4 font-semibold text-slate-700 dark:text-gray-200 text-xs sm:text-sm">Clínica</th>
+                                <th className="pb-3 px-3 sm:px-4 font-semibold text-slate-700 dark:text-gray-200 text-xs sm:text-sm">Status</th>
+                                <th className="pb-3 px-3 sm:px-4 font-semibold text-slate-700 dark:text-gray-200 text-right text-xs sm:text-sm">Valor</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-gray-50">
-                            {[1, 2, 3, 4, 5].map((i) => (
-                                <tr key={i} className="hover:bg-gray-50">
-                                    <td className="py-3 text-gray-600">25/11/2025</td>
-                                    <td className="py-3 font-medium text-gray-900">Paciente {i}</td>
-                                    <td className="py-3 text-gray-600">Clínica Sorriso</td>
-                                    <td className="py-3 text-right font-medium text-gray-900">R$ 350,00</td>
+                        <tbody className="divide-y divide-gray-50 dark:divide-gray-700">
+                            {loading ? (
+                                <tr>
+                                    <td colSpan="5" className="py-8 text-center text-gray-500 dark:text-gray-400">Carregando...</td>
                                 </tr>
-                            ))}
+                            ) : reportsData.length === 0 ? (
+                                <tr>
+                                    <td colSpan="5" className="py-8 text-center text-gray-500 dark:text-gray-400">{t('reports.noAppointments')}</td>
+                                </tr>
+                            ) : (
+                                reportsData.slice(0, 10).map((appointment) => (
+                                    <tr key={appointment.id} className="hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                                        <td className="py-3 px-3 sm:px-4 text-slate-600 dark:text-gray-300 text-xs sm:text-sm">{formatDate(appointment.date)}</td>
+                                        <td className="py-3 px-3 sm:px-4 font-medium text-slate-900 dark:text-white text-xs sm:text-sm">{appointment.patients?.name || 'Sem paciente'}</td>
+                                        <td className="py-3 px-3 sm:px-4 text-slate-600 dark:text-gray-300 text-xs sm:text-sm">{appointment.clinics?.name || 'Sem clínica'}</td>
+                                        <td className="py-3 px-3 sm:px-4">
+                                            {appointment.status === 'paid' && <Badge variant="success">Pago</Badge>}
+                                            {appointment.status === 'pending' && <Badge variant="warning">Pendente</Badge>}
+                                            {appointment.status === 'scheduled' && <Badge variant="primary">Agendado</Badge>}
+                                        </td>
+                                        <td className="py-3 px-3 sm:px-4 text-right">
+                                            <div className="flex flex-col items-end">
+                                                <span className="font-semibold text-slate-900 dark:text-white">
+                                                    {formatCurrency(parseFloat(appointment.value), appointment.currency || currency)}
+                                                </span>
+                                                {appointment.payment_type === 'percentage' && appointment.payment_percentage && (
+                                                    <span className="text-xs text-slate-500 dark:text-gray-400 mt-0.5">
+                                                        Recebido: {formatCurrency(calculateReceivedValue(appointment), appointment.currency || currency)} ({appointment.payment_percentage}%)
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))
+                            )}
                         </tbody>
                     </table>
                 </div>
             </Card>
-        </div>
+
+            {/* Custom Period Modal */}
+            <Modal
+                isOpen={isCustomPeriodOpen}
+                onClose={() => setIsCustomPeriodOpen(false)}
+                title="Período Personalizado"
+            >
+                <div className="space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <DateInput
+                            label="Data Inicial"
+                            value={customStartDate}
+                            onChange={(e) => setCustomStartDate(e.target.value)}
+                        />
+                        <DateInput
+                            label={t('reports.endDate')}
+                            value={customEndDate}
+                            onChange={(e) => setCustomEndDate(e.target.value)}
+                        />
+                    </div>
+                    <div className="flex gap-2 pt-2">
+                        <Button
+                            variant="secondary"
+                            onClick={() => {
+                                const today = new Date();
+                                const twoMonthsAgo = new Date(today);
+                                twoMonthsAgo.setMonth(today.getMonth() - 2);
+                                setCustomStartDate(twoMonthsAgo.toISOString().split('T')[0]);
+                                setCustomEndDate(today.toISOString().split('T')[0]);
+                            }}
+                            className="text-sm"
+                        >
+                            2 meses atrás
+                        </Button>
+                        <Button
+                            variant="secondary"
+                            onClick={() => {
+                                const today = new Date();
+                                const threeMonthsAgo = new Date(today);
+                                threeMonthsAgo.setMonth(today.getMonth() - 3);
+                                setCustomStartDate(threeMonthsAgo.toISOString().split('T')[0]);
+                                setCustomEndDate(today.toISOString().split('T')[0]);
+                            }}
+                            className="text-sm"
+                        >
+                            3 meses atrás
+                        </Button>
+                    </div>
+                    <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
+                        <Button variant="secondary" onClick={() => setIsCustomPeriodOpen(false)}>
+                            Cancelar
+                        </Button>
+                        <Button onClick={() => {
+                            if (customStartDate && customEndDate) {
+                                setPeriod('custom');
+                                setIsCustomPeriodOpen(false);
+                                loadReportsData();
+                            } else {
+                                alert(t('reports.selectDates'));
+                            }
+                        }}>
+                            Aplicar Período
+                        </Button>
+                    </div>
+                </div>
+            </Modal>
+        </motion.div>
     );
 };
 

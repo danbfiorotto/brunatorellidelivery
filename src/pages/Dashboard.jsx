@@ -9,10 +9,17 @@ import {
     Tooltip,
     Legend,
 } from 'chart.js';
-import { DollarSign, Users, Building2, TrendingUp, Calendar } from 'lucide-react';
+import { DollarSign, Building2, TrendingUp, Calendar, ArrowUpRight, Download, Plus } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
+import jsPDF from 'jspdf';
 import Card from '../components/UI/Card';
 import Badge from '../components/UI/Badge';
-import { getDashboardStats } from '../services/api';
+import Button from '../components/UI/Button';
+import { getDashboardStats, getClinicStats, getAppointments } from '../services/api';
+import { useLanguage } from '../context/LanguageContext';
+import { useCurrency } from '../context/CurrencyContext';
+import { cn, formatCurrency } from '../lib/utils';
 
 ChartJS.register(
     CategoryScale,
@@ -24,158 +31,352 @@ ChartJS.register(
 );
 
 const Dashboard = () => {
+    const navigate = useNavigate();
+    const { t } = useLanguage();
+    const { currency } = useCurrency();
     const [stats, setStats] = useState({
         revenue: 0,
         pending: 0,
         appointments: 0,
         clinics: 0
     });
+    const [clinicRanking, setClinicRanking] = useState([]);
+    const [weeklyData, setWeeklyData] = useState([]);
+    const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        // Fetch stats
-        getDashboardStats().then(setStats);
+        loadDashboardData();
     }, []);
 
+    const handleExportDashboard = () => {
+        const doc = new jsPDF();
+        doc.setFontSize(18);
+        doc.text('Relatório do Dashboard', 20, 20);
+        doc.setFontSize(12);
+        doc.text(`Faturamento: ${formatCurrency(stats.revenue, currency)}`, 20, 35);
+        doc.text(`Pendente: ${formatCurrency(stats.pending, currency)}`, 20, 45);
+        doc.text(`Total de Atendimentos: ${stats.appointments}`, 20, 55);
+        doc.text(`Clínicas Cadastradas: ${stats.clinics}`, 20, 65);
+        doc.text(`Ticket Médio: ${formatCurrency(stats.appointments > 0 ? (stats.revenue / stats.appointments) : 0, currency)}`, 20, 75);
+        
+        let y = 90;
+        doc.text('Top 5 Clínicas:', 20, y);
+        y += 10;
+        clinicRanking.slice(0, 5).forEach((clinic, i) => {
+            doc.text(`${i + 1}. ${clinic.name} - ${formatCurrency(clinic.revenue, currency)}`, 25, y);
+            y += 8;
+        });
+        
+        doc.save(`dashboard-${new Date().toISOString().split('T')[0]}.pdf`);
+    };
+
+    const loadDashboardData = async () => {
+        try {
+            setLoading(true);
+            const [statsData, rankingData, appointmentsData] = await Promise.all([
+                getDashboardStats(),
+                getClinicStats(),
+                getAppointments()
+            ]);
+            
+            setStats(statsData);
+            setClinicRanking(rankingData);
+            
+            // Calculate weekly data
+            const now = new Date();
+            const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+            const weekAppointments = (appointmentsData || []).filter(apt => {
+                const aptDate = new Date(apt.date);
+                return aptDate >= weekAgo && aptDate <= now;
+            });
+            
+            // Group by day
+            const dayMap = {};
+            weekAppointments.forEach(apt => {
+                const aptDate = new Date(apt.date);
+                const day = aptDate.toLocaleDateString('pt-BR', { weekday: 'short' });
+                if (!dayMap[day]) {
+                    dayMap[day] = { finished: 0, pending: 0 };
+                }
+                if (apt.status === 'paid') {
+                    dayMap[day].finished++;
+                } else if (apt.status === 'pending' || apt.status === 'scheduled') {
+                    dayMap[day].pending++;
+                }
+            });
+            
+            const days = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
+            const weekly = days.map(day => ({
+                label: day,
+                finished: dayMap[day]?.finished || 0,
+                pending: dayMap[day]?.pending || 0
+            }));
+            
+            setWeeklyData(weekly);
+        } catch (error) {
+            console.error('Error loading dashboard data:', error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
     const chartData = {
-        labels: ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'],
+        labels: weeklyData.map(d => d.label),
         datasets: [
             {
-                label: 'Atendimentos',
-                data: [12, 19, 3, 5, 2, 3],
-                backgroundColor: 'rgba(59, 130, 246, 0.5)',
-                borderColor: 'rgb(59, 130, 246)',
-                borderWidth: 1,
-                borderRadius: 4,
+                label: t('dashboard.finished'),
+                data: weeklyData.map(d => d.finished),
+                backgroundColor: 'rgba(16, 185, 129, 0.8)', // Emerald-500
+                hoverBackgroundColor: 'rgba(5, 150, 105, 1)', // Emerald-600
+                borderRadius: 8,
+                borderSkipped: false,
+            },
+            {
+                label: t('dashboard.pending'),
+                data: weeklyData.map(d => d.pending),
+                backgroundColor: 'rgba(245, 158, 11, 0.8)', // Amber-500
+                hoverBackgroundColor: 'rgba(217, 119, 6, 1)', // Amber-600
+                borderRadius: 8,
+                borderSkipped: false,
             },
         ],
     };
 
     const chartOptions = {
         responsive: true,
+        maintainAspectRatio: false,
         plugins: {
-            legend: {
-                display: false,
+            legend: { 
+                display: true,
+                position: 'top',
+                labels: {
+                    usePointStyle: true,
+                    padding: 15,
+                    font: {
+                        size: 12,
+                        weight: '600'
+                    }
+                }
             },
-            title: {
-                display: false,
-            },
+            tooltip: {
+                backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                titleColor: '#1e293b',
+                bodyColor: '#475569',
+                borderColor: '#e2e8f0',
+                borderWidth: 1,
+                padding: 12,
+                displayColors: false,
+                callbacks: {
+                    label: (context) => ` ${context.parsed.y} atendimentos`
+                }
+            }
         },
         scales: {
             y: {
                 beginAtZero: true,
                 grid: {
-                    display: false,
-                }
+                    color: '#f1f5f9',
+                    drawBorder: false,
+                },
+                ticks: { color: '#94a3b8' }
             },
             x: {
-                grid: {
-                    display: false,
-                }
+                grid: { display: false },
+                ticks: { color: '#94a3b8' }
             }
         }
     };
 
+    const containerVariants = {
+        hidden: { opacity: 0 },
+        show: {
+            opacity: 1,
+            transition: {
+                staggerChildren: 0.1
+            }
+        }
+    };
+
+    const itemVariants = {
+        hidden: { opacity: 0, y: 20 },
+        show: { opacity: 1, y: 0 }
+    };
+
     return (
-        <div className="space-y-6">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div>
-                    <h2 className="text-2xl font-bold text-gray-900">Painel Geral</h2>
-                    <p className="text-gray-500">Bem-vindo de volta, Dr(a). Bruna!</p>
-                </div>
-                <div className="flex gap-2">
-                    <button className="px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50">
-                        Exportar
-                    </button>
-                    <button className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">
-                        Novo Atendimento
-                    </button>
+        <motion.div
+            variants={containerVariants}
+            initial="hidden"
+            animate="show"
+            className="space-y-8"
+        >
+            <div className="bg-gradient-to-r from-sky-500 to-emerald-500 dark:from-sky-600 dark:to-emerald-600 rounded-2xl p-6 md:p-8 text-white mb-8 shadow-xl">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div>
+                        <h2 className="text-3xl md:text-4xl font-bold mb-2">{t('dashboard.title')}</h2>
+                        <p className="text-white/90">{t('dashboard.subtitle')}</p>
+                    </div>
+                    <div className="flex gap-3">
+                        <Button 
+                            variant="secondary" 
+                            className="gap-2 bg-white/20 hover:bg-white/30 text-white border-white/30"
+                            onClick={handleExportDashboard}
+                        >
+                            <Download size={18} />
+                            {t('dashboard.export')}
+                        </Button>
+                        <Button 
+                            className="gap-2 bg-white dark:bg-gray-800 text-sky-600 dark:text-sky-400 hover:bg-gray-50 dark:hover:bg-gray-700 shadow-lg"
+                            onClick={() => navigate('/appointments')}
+                        >
+                            <Plus size={18} />
+                            {t('dashboard.newAppointment')}
+                        </Button>
+                    </div>
                 </div>
             </div>
 
-            {/* KPI Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <KpiCard
-                    title="Faturamento Mensal"
-                    value={`R$ ${stats.revenue.toLocaleString()}`}
-                    subtext="+12% vs mês anterior"
-                    icon={<DollarSign className="text-green-600" size={24} />}
-                    trend="up"
-                />
-                <KpiCard
-                    title="Atendimentos"
-                    value={stats.appointments}
-                    subtext="Total este mês"
-                    icon={<Calendar className="text-blue-600" size={24} />}
-                />
-                <KpiCard
-                    title="Clínicas Ativas"
-                    value={stats.clinics}
-                    subtext="Parceiros cadastrados"
-                    icon={<Building2 className="text-purple-600" size={24} />}
-                />
-                <KpiCard
-                    title="Ticket Médio"
-                    value="R$ 350"
-                    subtext="Por atendimento"
-                    icon={<TrendingUp className="text-orange-600" size={24} />}
-                />
+            {/* Summary Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-8">
+                <Card className="bg-gradient-to-br from-emerald-50 to-emerald-100/50 dark:from-emerald-900/30 dark:to-emerald-800/30 border-emerald-200 dark:border-emerald-800">
+                    <div className="flex justify-between items-start">
+                        <div>
+                            <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-300 mb-1">{t('dashboard.monthlyRevenue')}</p>
+                            <h3 className="text-3xl font-bold text-emerald-900 dark:text-emerald-100 mb-1">
+                                {formatCurrency(stats.revenue, currency)}
+                            </h3>
+                            <div className="flex items-center gap-2 mt-2">
+                                <span className="text-xs font-medium text-emerald-700 dark:text-emerald-300 bg-emerald-200 dark:bg-emerald-800/50 px-2 py-0.5 rounded-full">
+                                    {t('dashboard.received')}: {formatCurrency(stats.revenue, currency)}
+                                </span>
+                            </div>
+                            <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-2">
+                                {t('dashboard.pending')}: {formatCurrency(stats.pending, currency)}
+                            </p>
+                        </div>
+                        <div className="p-3 bg-emerald-200 dark:bg-emerald-800/50 rounded-xl">
+                            <DollarSign className="text-emerald-700 dark:text-emerald-300" size={24} />
+                        </div>
+                    </div>
+                </Card>
+
+                <Card className="bg-gradient-to-br from-sky-50 to-sky-100/50 dark:from-sky-900/30 dark:to-sky-800/30 border-sky-200 dark:border-sky-800">
+                    <div className="flex justify-between items-start">
+                        <div>
+                            <p className="text-sm font-semibold text-sky-700 dark:text-sky-300 mb-1">{t('dashboard.appointments')}</p>
+                            <h3 className="text-3xl font-bold text-sky-900 dark:text-sky-100 mb-1">{stats.appointments}</h3>
+                            <p className="text-xs text-sky-600 dark:text-sky-400 mt-2">{t('dashboard.totalProcedures')}</p>
+                        </div>
+                        <div className="p-3 bg-sky-200 dark:bg-sky-800/50 rounded-xl">
+                            <Calendar className="text-sky-700 dark:text-sky-300" size={24} />
+                        </div>
+                    </div>
+                </Card>
+
+                <Card className="bg-gradient-to-br from-violet-50 to-violet-100/50 dark:from-violet-900/30 dark:to-violet-800/30 border-violet-200 dark:border-violet-800">
+                    <div className="flex justify-between items-start">
+                        <div>
+                            <p className="text-sm font-semibold text-violet-700 dark:text-violet-300 mb-1">{t('dashboard.clinics')}</p>
+                            <h3 className="text-3xl font-bold text-violet-900 dark:text-violet-100 mb-1">{stats.clinics}</h3>
+                            <p className="text-xs text-violet-600 dark:text-violet-400 mt-2">{t('dashboard.activePartners')}</p>
+                        </div>
+                        <div className="p-3 bg-violet-200 dark:bg-violet-800/50 rounded-xl">
+                            <Building2 className="text-violet-700 dark:text-violet-300" size={24} />
+                        </div>
+                    </div>
+                </Card>
+
+                <Card className="bg-gradient-to-br from-amber-50 to-amber-100/50 dark:from-amber-900/30 dark:to-amber-800/30 border-amber-200 dark:border-amber-800">
+                    <div className="flex justify-between items-start">
+                        <div>
+                            <p className="text-sm font-semibold text-amber-700 dark:text-amber-300 mb-1">{t('dashboard.averageTicket')}</p>
+                            <h3 className="text-3xl font-bold text-amber-900 dark:text-amber-100 mb-1">
+                                {formatCurrency(stats.appointments > 0 ? (stats.revenue / stats.appointments) : 0, currency)}
+                            </h3>
+                            <p className="text-xs text-amber-600 dark:text-amber-400 mt-2">{t('dashboard.perAppointment')}</p>
+                        </div>
+                        <div className="p-3 bg-amber-200 dark:bg-amber-800/50 rounded-xl">
+                            <TrendingUp className="text-amber-700 dark:text-amber-300" size={24} />
+                        </div>
+                    </div>
+                </Card>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
                 {/* Productivity Chart */}
-                <div className="lg:col-span-2">
-                    <Card title="Produtividade Semanal">
-                        <div className="h-64">
+                <motion.div variants={itemVariants} className="lg:col-span-2">
+                    <Card className="h-full">
+                        <div className="flex items-center justify-between mb-6">
+                            <div>
+                                <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-1">{t('dashboard.weeklyProductivity')}</h3>
+                                <p className="text-sm text-slate-500 dark:text-gray-400">{t('dashboard.finishedVsPending')}</p>
+                            </div>
+                            <select className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-slate-700 dark:text-gray-300 text-sm rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500">
+                                <option>Últimos 7 dias</option>
+                                <option>Este mês</option>
+                            </select>
+                        </div>
+                        <div className="h-64 sm:h-80 w-full">
                             <Bar data={chartData} options={chartOptions} />
                         </div>
                     </Card>
-                </div>
+                </motion.div>
 
                 {/* Clinics Ranking */}
-                <div>
-                    <Card title="Ranking de Clínicas">
-                        <div className="space-y-4">
-                            {[1, 2, 3, 4, 5].map((i) => (
-                                <div key={i} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-8 h-8 flex items-center justify-center bg-white rounded-full font-bold text-gray-500 shadow-sm">
-                                            {i}
+                <motion.div variants={itemVariants}>
+                    <Card className="h-full">
+                        <div className="flex items-center justify-between mb-6">
+                            <div>
+                                <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-1">{t('dashboard.clinicRanking')}</h3>
+                                <p className="text-sm text-slate-500 dark:text-gray-400">{t('dashboard.byRevenue')}</p>
+                            </div>
+                            <Button 
+                                variant="ghost" 
+                                className="text-xs px-3 py-1.5 h-auto"
+                                onClick={() => navigate('/clinics')}
+                            >
+                                {t('dashboard.viewAll')}
+                            </Button>
+                        </div>
+                        <div className="space-y-3">
+                            {clinicRanking.length === 0 && !loading && (
+                                <p className="text-center text-gray-500 dark:text-gray-400 py-4">Nenhuma clínica com atendimentos ainda.</p>
+                            )}
+                            {loading && (
+                                <p className="text-center text-gray-500 dark:text-gray-400 py-4">Carregando...</p>
+                            )}
+                            {clinicRanking.slice(0, 5).map((clinic, i) => {
+                                const totalRevenue = clinicRanking.reduce((sum, c) => sum + c.revenue, 0);
+                                const percentage = totalRevenue > 0 ? Math.round((clinic.revenue / totalRevenue) * 100) : 0;
+                                return (
+                                    <div key={clinic.id || i} className="flex items-center justify-between p-4 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-xl transition-colors group cursor-pointer border border-gray-100 dark:border-gray-700 hover:border-gray-200 dark:hover:border-gray-600">
+                                        <div className="flex items-center gap-3 flex-1 min-w-0">
+                                            <div className="w-10 h-10 flex items-center justify-center bg-gradient-to-br from-sky-100 to-emerald-100 rounded-full font-bold text-sky-700 shadow-sm flex-shrink-0">
+                                                {i + 1}
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <p className="font-semibold text-slate-900 dark:text-white group-hover:text-sky-600 dark:group-hover:text-sky-400 transition-colors truncate">{clinic.name}</p>
+                                                <div className="flex items-center gap-3 mt-1">
+                                                    <p className="text-xs text-slate-500 dark:text-gray-400">{clinic.appointments} atendimentos</p>
+                                                    <span className="text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
+                                                        {percentage}%
+                                                    </span>
+                                                </div>
+                                            </div>
                                         </div>
-                                        <div>
-                                            <p className="font-medium text-gray-900">Clínica Sorriso {i}</p>
-                                            <p className="text-xs text-gray-500">12 atendimentos</p>
+                                        <div className="text-right ml-4">
+                                            <p className="font-bold text-slate-900 dark:text-white">{formatCurrency(clinic.revenue, currency)}</p>
+                                            <p className="text-xs text-slate-500 dark:text-gray-400">Ticket: {formatCurrency(clinic.ticket, currency)}</p>
                                         </div>
                                     </div>
-                                    <div className="text-right">
-                                        <p className="font-medium text-gray-900">R$ 4.200</p>
-                                        <Badge variant="success">Active</Badge>
-                                    </div>
-                                </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     </Card>
-                </div>
+                </motion.div>
             </div>
-        </div>
+        </motion.div>
     );
 };
 
-const KpiCard = ({ title, value, subtext, icon, trend }) => (
-    <Card className="relative overflow-hidden">
-        <div className="flex justify-between items-start">
-            <div>
-                <p className="text-sm font-medium text-gray-500">{title}</p>
-                <h3 className="text-2xl font-bold text-gray-900 mt-2">{value}</h3>
-                <p className="text-xs text-gray-500 mt-1 flex items-center gap-1">
-                    {trend === 'up' && <span className="text-green-500 font-medium">↑</span>}
-                    {subtext}
-                </p>
-            </div>
-            <div className="p-3 bg-gray-50 rounded-lg">
-                {icon}
-            </div>
-        </div>
-    </Card>
-);
 
 export default Dashboard;
