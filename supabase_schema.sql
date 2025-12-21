@@ -16,10 +16,12 @@ create table if not exists clinics (
 create table if not exists patients (
   id uuid default uuid_generate_v4() primary key,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  updated_at timestamp with time zone default timezone('utc'::text, now()) not null,
   name text not null,
   email text,
   phone text,
-  last_visit timestamp with time zone
+  last_visit timestamp with time zone,
+  user_id uuid references auth.users(id) on delete cascade not null
 );
 
 -- Appointments Table
@@ -35,6 +37,24 @@ create table if not exists appointments (
   status text default 'scheduled', -- scheduled, pending, paid
   notes text
 );
+
+-- Add user_id and updated_at to patients if they don't exist
+do $$ 
+begin
+  if not exists (select 1 from information_schema.columns where table_name='patients' and column_name='user_id') then
+    -- Para dados existentes, precisamos de um user_id válido
+    -- Se houver dados, você precisará atualizar manualmente ou deletar os registros antigos
+    alter table patients add column user_id uuid references auth.users(id) on delete cascade;
+    -- Se você tem dados antigos, você precisará atualizar manualmente:
+    -- UPDATE patients SET user_id = (SELECT id FROM auth.users LIMIT 1) WHERE user_id IS NULL;
+    -- Depois tornar obrigatório:
+    alter table patients alter column user_id set not null;
+  end if;
+  
+  if not exists (select 1 from information_schema.columns where table_name='patients' and column_name='updated_at') then
+    alter table patients add column updated_at timestamp with time zone default timezone('utc'::text, now()) not null;
+  end if;
+end $$;
 
 -- Add new columns to appointments if they don't exist
 do $$ 
