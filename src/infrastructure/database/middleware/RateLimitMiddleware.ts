@@ -14,8 +14,14 @@ export class RateLimitMiddleware implements IMiddleware {
         const session = await this.authClient.getSession();
         const userId = session?.user?.id || context.userId || 'anonymous';
         
-        if (!apiRateLimiter.canMakeRequest(userId)) {
-            throw new RateLimitError('Muitas requisições. Aguarde um momento.');
+        const checkResult = apiRateLimiter.checkLimit(userId);
+        
+        if (!checkResult.allowed) {
+            const retryAfter = checkResult.retryAfter || 60;
+            throw new RateLimitError(
+                'Muitas requisições. Aguarde um momento.',
+                retryAfter
+            );
         }
 
         return next();
