@@ -49,11 +49,27 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     };
 
     const signOut = async (): Promise<void> => {
-        // Log logout before signing out
-        if (user?.id) {
-            await logAction('logout', 'auth', user.id, null, null);
+        try {
+            // Log logout before signing out (não deve bloquear o logout se falhar)
+            if (user?.id) {
+                try {
+                    await logAction('logout', 'auth', user.id, null, null);
+                } catch (logError) {
+                    // Log de auditoria falhou, mas não deve impedir o logout
+                    console.warn('Failed to log logout action:', logError);
+                }
+            }
+            
+            // Realizar logout
+            await authClient.signOut();
+            
+            // Limpar estado local imediatamente
+            setUser(null);
+        } catch (error) {
+            // Se o logout falhar, ainda limpar o estado local para evitar estado inconsistente
+            setUser(null);
+            throw error;
         }
-        await authClient.signOut();
     };
 
     return (

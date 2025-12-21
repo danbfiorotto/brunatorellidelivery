@@ -1,5 +1,6 @@
 import React, { useState, useEffect, FormEvent, ChangeEvent } from 'react';
-import { User, Mail, Phone, Globe, Moon, Sun, LogOut, Monitor } from 'lucide-react';
+import { User, Mail, Phone, Globe, Moon, Sun, LogOut, Monitor, Loader2 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 import { useCurrency } from '../context/CurrencyContext';
@@ -31,8 +32,10 @@ const Profile: React.FC = () => {
     const profileService = container.resolve('profileService');
     const { handleError } = useErrorHandler();
     const { showSuccess, showError } = useToast();
+    const navigate = useNavigate();
     const [loading, setLoading] = useState<boolean>(true);
     const [saving, setSaving] = useState<boolean>(false);
+    const [isLoggingOut, setIsLoggingOut] = useState<boolean>(false);
     const [formData, setFormData] = useState<FormData>({
         name: '',
         email: user?.email || '',
@@ -120,6 +123,26 @@ const Profile: React.FC = () => {
         }
     };
 
+    const handleSignOut = async (): Promise<void> => {
+        if (isLoggingOut) return; // Prevenir múltiplos cliques
+        
+        setIsLoggingOut(true);
+        try {
+            await signOut();
+            showSuccess(t('auth.logoutSuccess') || 'Logout realizado com sucesso');
+            // Redirecionar após um pequeno delay para permitir que o toast seja exibido
+            setTimeout(() => {
+                navigate('/login', { replace: true });
+            }, 500);
+        } catch (error) {
+            console.error('Erro ao fazer logout:', error);
+            showError(
+                error instanceof Error ? error.message : (t('auth.logoutError') || 'Erro ao fazer logout. Tente novamente.')
+            );
+            setIsLoggingOut(false);
+        }
+    };
+
     return (
         <div className="space-y-6 max-w-4xl mx-auto">
             <div className="bg-gradient-to-r from-sky-500 to-emerald-500 dark:from-sky-600 dark:to-emerald-600 rounded-2xl p-6 md:p-8 text-white mb-8 shadow-xl">
@@ -136,9 +159,23 @@ const Profile: React.FC = () => {
                         </div>
                         <h3 className="font-bold text-slate-900 dark:text-white mb-1">{formData.name}</h3>
                         <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">{formData.email}</p>
-                        <Button variant="secondary" onClick={signOut} className="w-full flex items-center justify-center gap-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-700 dark:hover:text-red-300 border-red-200 dark:border-red-800">
-                            <LogOut size={18} />
-                            {t('profile.signOut')}
+                        <Button 
+                            variant="secondary" 
+                            onClick={handleSignOut}
+                            disabled={isLoggingOut}
+                            className="w-full flex items-center justify-center gap-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-700 dark:hover:text-red-300 border-red-200 dark:border-red-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            {isLoggingOut ? (
+                                <>
+                                    <Loader2 size={18} className="animate-spin" />
+                                    {t('auth.loggingOut') || 'Saindo...'}
+                                </>
+                            ) : (
+                                <>
+                                    <LogOut size={18} />
+                                    {t('profile.signOut')}
+                                </>
+                            )}
                         </Button>
                     </Card>
                 </div>

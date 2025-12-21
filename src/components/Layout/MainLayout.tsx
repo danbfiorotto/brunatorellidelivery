@@ -1,18 +1,43 @@
 import React, { useState, ReactNode } from 'react';
-import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Calendar, Users, Building2, BarChart3, User, LogOut, Menu, X, LucideIcon } from 'lucide-react';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { LayoutDashboard, Calendar, Users, Building2, BarChart3, User, LogOut, Menu, X, LucideIcon, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
+import { useToast } from '../UI/Toast';
 import { cn } from '../../lib/utils';
+import Logo from '../UI/Logo';
 
 const MainLayout: React.FC = () => {
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
+    const [isLoggingOut, setIsLoggingOut] = useState<boolean>(false);
     const { signOut, user } = useAuth();
     const { t } = useLanguage();
     const location = useLocation();
+    const navigate = useNavigate();
+    const { showError, showSuccess } = useToast();
 
     const toggleMobileMenu = (): void => setIsMobileMenuOpen(!isMobileMenuOpen);
+
+    const handleSignOut = async (): Promise<void> => {
+        if (isLoggingOut) return; // Prevenir múltiplos cliques
+        
+        setIsLoggingOut(true);
+        try {
+            await signOut();
+            showSuccess(t('auth.logoutSuccess') || 'Logout realizado com sucesso');
+            // Redirecionar após um pequeno delay para permitir que o toast seja exibido
+            setTimeout(() => {
+                navigate('/login', { replace: true });
+            }, 500);
+        } catch (error) {
+            console.error('Erro ao fazer logout:', error);
+            showError(
+                error instanceof Error ? error.message : (t('auth.logoutError') || 'Erro ao fazer logout. Tente novamente.')
+            );
+            setIsLoggingOut(false);
+        }
+    };
 
     return (
         <div className="flex min-h-screen bg-white dark:bg-gray-900 font-sans text-slate-900 dark:text-white">
@@ -20,9 +45,7 @@ const MainLayout: React.FC = () => {
             <aside className="hidden lg:flex flex-col w-72 fixed h-full z-20 p-4">
                 <div className="glass-panel h-full rounded-2xl flex flex-col overflow-hidden dark:bg-gray-800/90 dark:border-gray-700">
                     <div className="p-6 border-b border-slate-100/50 dark:border-gray-700/50 bg-gradient-to-r from-sky-500 to-emerald-500 dark:from-sky-600 dark:to-emerald-600 rounded-t-2xl">
-                        <h1 className="text-2xl font-bold text-white">
-                            EndoSystem
-                        </h1>
+                        <Logo size="lg" textClassName="text-white" />
                         <p className="text-xs text-white/80 mt-1">Premium Dashboard</p>
                     </div>
 
@@ -52,11 +75,21 @@ const MainLayout: React.FC = () => {
                             {t('nav.profile')}
                         </NavLink>
                         <button
-                            onClick={signOut}
-                            className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                            onClick={handleSignOut}
+                            disabled={isLoggingOut}
+                            className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                            <LogOut size={18} />
-                            {t('profile.signOut')}
+                            {isLoggingOut ? (
+                                <>
+                                    <Loader2 size={18} className="animate-spin" />
+                                    {t('auth.loggingOut') || 'Saindo...'}
+                                </>
+                            ) : (
+                                <>
+                                    <LogOut size={18} />
+                                    {t('profile.signOut')}
+                                </>
+                            )}
                         </button>
                     </div>
                 </div>
@@ -65,7 +98,7 @@ const MainLayout: React.FC = () => {
             {/* Mobile Header */}
             <div className="lg:hidden fixed top-0 left-0 right-0 z-30 p-3 sm:p-4">
                 <div className="glass-panel rounded-xl p-3 sm:p-4 flex items-center justify-between bg-gradient-to-r from-sky-500 to-emerald-500 dark:from-sky-600 dark:to-emerald-600 dark:bg-gray-800/90 dark:border-gray-700">
-                    <h1 className="text-base sm:text-lg font-bold text-white">EndoSystem</h1>
+                    <Logo size="sm" textClassName="text-white text-base sm:text-lg" />
                     <button onClick={toggleMobileMenu} className="p-2 text-white">
                         {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
                     </button>
@@ -98,11 +131,21 @@ const MainLayout: React.FC = () => {
                                 {t('nav.profile')}
                             </NavLink>
                             <button
-                                onClick={signOut}
-                                className="w-full flex items-center gap-3 px-4 py-3 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-colors"
+                                onClick={handleSignOut}
+                                disabled={isLoggingOut}
+                                className="w-full flex items-center gap-3 px-4 py-3 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                             >
-                                <LogOut size={20} />
-                                {t('profile.signOut')}
+                                {isLoggingOut ? (
+                                    <>
+                                        <Loader2 size={20} className="animate-spin" />
+                                        {t('auth.loggingOut') || 'Saindo...'}
+                                    </>
+                                ) : (
+                                    <>
+                                        <LogOut size={20} />
+                                        {t('profile.signOut')}
+                                    </>
+                                )}
                             </button>
                         </div>
                     </motion.div>

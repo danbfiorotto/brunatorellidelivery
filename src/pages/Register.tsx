@@ -2,10 +2,11 @@ import React, { useState, FormEvent, ChangeEvent } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Stethoscope, Activity, ArrowRight, UserPlus } from 'lucide-react';
+import { Activity, UserPlus } from 'lucide-react';
 import Button from '../components/UI/Button';
 import { logAction } from '../lib/audit';
 import { useToast } from '../components/UI/Toast';
+import Logo from '../components/UI/Logo';
 
 const Register: React.FC = () => {
     const [email, setEmail] = useState<string>('');
@@ -82,13 +83,8 @@ const Register: React.FC = () => {
                 </div>
 
                 <div className="relative z-10">
-                    <div className="flex items-center gap-3 text-2xl font-bold mb-2">
-                        <div className="p-2 bg-white/20 rounded-lg backdrop-blur-md">
-                            <Stethoscope className="w-8 h-8" />
-                        </div>
-                        EndoSystem
-                    </div>
-                    <p className="text-sky-100">Gestão inteligente para sua clínica.</p>
+                    <Logo size="lg" textClassName="text-white text-2xl" />
+                    <p className="text-sky-100 mt-2">Gestão inteligente para sua clínica.</p>
                 </div>
 
                 <div className="relative z-10 space-y-6">

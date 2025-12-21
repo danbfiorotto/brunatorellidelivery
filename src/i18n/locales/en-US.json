@@ -233,6 +233,11 @@
     "autoModeDescription": "Follows system/browser preference",
     "savePreferences": "Save Preferences"
   },
+  "auth": {
+    "logoutSuccess": "Logout successful",
+    "logoutError": "Error logging out. Please try again.",
+    "loggingOut": "Signing out..."
+  },
   "login": {
     "title": "Welcome back!",
     "subtitle": "Sign in to your account to continue",

@@ -213,6 +213,11 @@
     "autoModeDescription": "Sigue la preferencia del sistema/navegador",
     "savePreferences": "Guardar Preferencias"
   },
+  "auth": {
+    "logoutSuccess": "Cierre de sesión exitoso",
+    "logoutError": "Error al cerrar sesión. Por favor, intente nuevamente.",
+    "loggingOut": "Cerrando sesión..."
+  },
   "login": {
     "title": "¡Bienvenido de nuevo!",
     "subtitle": "Inicie sesión en su cuenta para continuar",

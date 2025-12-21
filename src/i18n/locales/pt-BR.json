@@ -216,6 +216,11 @@
     "autoModeDescription": "Segue a preferência do sistema/navegador",
     "savePreferences": "Salvar Preferências"
   },
+  "auth": {
+    "logoutSuccess": "Logout realizado com sucesso",
+    "logoutError": "Erro ao fazer logout. Tente novamente.",
+    "loggingOut": "Saindo..."
+  },
   "login": {
     "title": "Bem-vindo de volta!",
     "subtitle": "Entre na sua conta para continuar",
