@@ -85,6 +85,13 @@ const Profile: React.FC = () => {
                 ...formData,
                 phone: unformatPhoneNumber(formData.phone)
             };
+            
+            logger.debug('Saving profile data', { 
+                userId: user.id, 
+                hasPhone: !!dataToSave.phone,
+                phoneLength: dataToSave.phone?.length || 0
+            });
+            
             await profileService.updateUserProfile(user.id, dataToSave);
             
             // Update language in context if it changed

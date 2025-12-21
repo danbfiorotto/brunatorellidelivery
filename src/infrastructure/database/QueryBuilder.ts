@@ -232,13 +232,12 @@ export class QueryBuilder {
 
     /**
      * Executa UPDATE
-     * ✅ Garante que a query está no estado correto antes de atualizar
+     * ✅ Preserva filtros WHERE aplicados anteriormente
      */
     async update<T = unknown>(data: unknown): Promise<T> {
-        // ✅ Garantir que this.query está no estado correto antes de atualizar
-        if (!this.query || typeof (this.query as any).update !== 'function') {
-            this.query = this.client.from(this.tableName);
-        }
+        // ✅ Não reinicializar a query para preservar filtros WHERE aplicados
+        // O Supabase query builder sempre terá o método update disponível
+        // após chamar from(), então não precisamos verificar ou reinicializar
         
         const { data: result, error } = await this.query.update(data).select();
         

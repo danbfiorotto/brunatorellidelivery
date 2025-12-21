@@ -101,11 +101,21 @@ export class ProfileService {
                 throw new Error('Token CSRF não encontrado. Por favor, recarregue a página.');
             }
 
+            // ✅ Validações explícitas para campos obrigatórios
+            if (!profile.name || typeof profile.name !== 'string' || !profile.name.trim()) {
+                throw new Error('Nome é obrigatório e não pode estar vazio');
+            }
+
+            // ✅ Tratar telefone vazio: strings vazias ou apenas espaços devem ser null
+            const normalizedPhone = profile.phone && typeof profile.phone === 'string' && profile.phone.trim()
+                ? profile.phone.trim()
+                : null;
+
             const data = await this.db.table('user_profiles')
                 .insert([{
                     user_id: userId,
-                    name: profile.name,
-                    phone: profile.phone || null,
+                    name: profile.name.trim(),
+                    phone: normalizedPhone,
                     language: profile.language || 'pt-BR',
                     currency: profile.currency || 'BRL',
                     theme: profile.theme || 'light',
@@ -152,9 +162,19 @@ export class ProfileService {
             const existing = await this.getUserProfile(userId);
 
             if (existing) {
+                // ✅ Validações explícitas para campos obrigatórios
+                if (!profile.name || typeof profile.name !== 'string' || !profile.name.trim()) {
+                    throw new Error('Nome é obrigatório e não pode estar vazio');
+                }
+
+                // ✅ Tratar telefone vazio: strings vazias ou apenas espaços devem ser null
+                const normalizedPhone = profile.phone && typeof profile.phone === 'string' && profile.phone.trim()
+                    ? profile.phone.trim()
+                    : null;
+
                 const updateData: Partial<UserProfile> = {
-                    name: profile.name,
-                    phone: profile.phone || null,
+                    name: profile.name.trim(),
+                    phone: normalizedPhone,
                     updated_at: new Date().toISOString()
                 };
                 
@@ -181,13 +201,21 @@ export class ProfileService {
                     updateData.notifications_clinics = profile.notifications_clinics;
                 }
                 
+                logger.debug('Updating user profile', { 
+                    userId, 
+                    updateData: { ...updateData, phone: updateData.phone ? '[REDACTED]' : null } 
+                });
+
                 const data = await this.db.table('user_profiles')
                     .where('user_id', userId)
                     .update(updateData)
                     .then(res => (Array.isArray(res) ? res[0] : res) as UserProfile);
 
                 await this.auditService.log('update', 'user_profile', userId, existing, profile);
-                logger.debug('User profile updated successfully', { userId });
+                logger.debug('User profile updated successfully', { 
+                    userId, 
+                    updatedFields: Object.keys(updateData) 
+                });
 
                 return data;
             } else {
