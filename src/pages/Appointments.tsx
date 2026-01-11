@@ -375,9 +375,26 @@ const Appointments: React.FC = () => {
                     setAppointments(Array.isArray(appointmentsResult) ? appointmentsResult : []);
                 }
                 
-                setClinics(Array.isArray(clinicsData) ? clinicsData : []);
-                setPatients(Array.isArray(patientsData) ? patientsData : []);
-                setProcedures(Array.isArray(proceduresData) ? proceduresData : []);
+                // Tratar clínicas: verificar se é objeto paginado ou array
+                if (clinicsData && typeof clinicsData === 'object' && 'data' in clinicsData) {
+                    setClinics((clinicsData as PaginatedResponse<Clinic>).data || []);
+                } else {
+                    setClinics(Array.isArray(clinicsData) ? clinicsData : []);
+                }
+                
+                // Tratar pacientes: verificar se é objeto paginado ou array
+                if (patientsData && typeof patientsData === 'object' && 'data' in patientsData) {
+                    setPatients((patientsData as PaginatedResponse<Patient>).data || []);
+                } else {
+                    setPatients(Array.isArray(patientsData) ? patientsData : []);
+                }
+                
+                // Tratar procedimentos: verificar se é objeto paginado ou array
+                if (proceduresData && typeof proceduresData === 'object' && 'data' in proceduresData) {
+                    setProcedures((proceduresData as PaginatedResponse<Procedure>).data || []);
+                } else {
+                    setProcedures(Array.isArray(proceduresData) ? proceduresData : []);
+                }
             } catch (error) {
                 if (abortController.signal.aborted) return;
                 logger.error(error, { context: 'Appointments.loadData' });
@@ -450,9 +467,26 @@ const Appointments: React.FC = () => {
                 setAppointments(Array.isArray(appointmentsResult) ? appointmentsResult : []);
             }
             
-            setClinics(Array.isArray(clinicsData) ? clinicsData : []);
-            setPatients(Array.isArray(patientsData) ? patientsData : []);
-            setProcedures(Array.isArray(proceduresData) ? proceduresData : []);
+            // Tratar clínicas: verificar se é objeto paginado ou array
+            if (clinicsData && typeof clinicsData === 'object' && 'data' in clinicsData) {
+                setClinics((clinicsData as PaginatedResponse<Clinic>).data || []);
+            } else {
+                setClinics(Array.isArray(clinicsData) ? clinicsData : []);
+            }
+            
+            // Tratar pacientes: verificar se é objeto paginado ou array
+            if (patientsData && typeof patientsData === 'object' && 'data' in patientsData) {
+                setPatients((patientsData as PaginatedResponse<Patient>).data || []);
+            } else {
+                setPatients(Array.isArray(patientsData) ? patientsData : []);
+            }
+            
+            // Tratar procedimentos: verificar se é objeto paginado ou array
+            if (proceduresData && typeof proceduresData === 'object' && 'data' in proceduresData) {
+                setProcedures((proceduresData as PaginatedResponse<Procedure>).data || []);
+            } else {
+                setProcedures(Array.isArray(proceduresData) ? proceduresData : []);
+            }
         } catch (error) {
             handleError(error, 'loadData');
         } finally {
