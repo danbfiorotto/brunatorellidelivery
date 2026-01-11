@@ -256,14 +256,13 @@ export const validateCreateAppointmentDTO = (data: CreateAppointmentDTO): Valida
         errors.patient = 'Paciente é obrigatório';
     }
     
-    // Validação de data
+    // Validação de data - permitir datas passadas pois atendimentos são preenchidos após o procedimento
     if (!data.date) {
         errors.date = 'Data é obrigatória';
     } else if (!validateDate(data.date)) {
         errors.date = 'Data inválida';
-    } else if (!validateDate(data.date, { notPast: true })) {
-        errors.date = 'Data não pode ser no passado para novos agendamentos';
     }
+    // Removida validação de data passada - atendimentos são preenchidos após o procedimento
     
     // Validação de hora
     if (!data.time) {

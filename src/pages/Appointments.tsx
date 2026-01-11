@@ -691,8 +691,8 @@ const Appointments: React.FC = () => {
             notes: formData.notes
         };
         
-        // Validate data
-        const validation = validateAppointment(dataToValidate);
+        // Validate data - permitir datas passadas pois atendimentos são preenchidos após o procedimento
+        const validation = validateAppointment(dataToValidate, { allowPastDates: true });
         if (!validation.isValid) {
             setValidationErrors(validation.errors);
             return;
@@ -780,7 +780,8 @@ const Appointments: React.FC = () => {
                 appointmentId = updated.id;
                 patientId = updated.patientId;
             } else {
-                const created = await appointmentService.create(dataToSave);
+                // Permitir datas passadas pois atendimentos são preenchidos após o procedimento
+                const created = await appointmentService.create(dataToSave, true);
                 appointmentId = created.id;
                 patientId = created.patientId;
             }
