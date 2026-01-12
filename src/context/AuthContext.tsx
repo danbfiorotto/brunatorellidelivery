@@ -1,8 +1,9 @@
 import React, { createContext, useState, useEffect, useContext, ReactNode } from 'react';
 import { User } from '@supabase/supabase-js';
 import { logAction } from '../lib/audit';
-import { useDependencies } from '../hooks/useDependencies';
+import { useDependenciesSafe } from '../hooks/useDependencies';
 import { IAuthClient } from '../infrastructure/auth/IAuthClient';
+import { setupDI } from '../infrastructure/di/setup';
 
 interface AuthContextType {
     user: User | null;
@@ -19,8 +20,12 @@ interface AuthProviderProps {
 }
 
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
-    const container = useDependencies();
-    const authClient = container.resolve<IAuthClient>('authClient');
+    // ✅ Usar useDependenciesSafe para evitar erro se DIProvider não estiver disponível
+    // Se não estiver disponível, criar container temporário (fallback)
+    const container = useDependenciesSafe();
+    const authClient = container 
+        ? container.resolve<IAuthClient>('authClient')
+        : setupDI().resolve<IAuthClient>('authClient');
     const [user, setUser] = useState<User | null>(null);
     const [loading, setLoading] = useState<boolean>(true);
 

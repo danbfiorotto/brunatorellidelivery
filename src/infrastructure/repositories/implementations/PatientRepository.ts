@@ -266,8 +266,9 @@ export class PatientRepository extends BaseRepository implements IPatientReposit
                 // Usar toJSON() da entidade
                 const patientData = patient.toJSON();
 
+                // ✅ Usar whereOperator ao invés de where para garantir que a query está no estado correto
                 const updated = await this.query()
-                    .where('id', id)
+                    .whereOperator('id', 'eq', id)
                     .update(patientData)
                     .then(res => (Array.isArray(res) ? res[0] : res) as PatientJSON);
                 

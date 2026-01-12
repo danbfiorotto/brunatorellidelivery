@@ -147,10 +147,17 @@ const DateInput: React.FC<DateInputProps> = ({
         if (dateInputRef.current) {
             // Try showPicker() first (modern browsers)
             if (typeof dateInputRef.current.showPicker === 'function') {
-                dateInputRef.current.showPicker().catch(() => {
-                    // Fallback to click if showPicker fails
-                    dateInputRef.current?.click();
-                });
+                const pickerResult = dateInputRef.current.showPicker();
+                // ✅ Verificar se showPicker retorna uma Promise antes de chamar .catch()
+                if (pickerResult && typeof pickerResult.catch === 'function') {
+                    pickerResult.catch(() => {
+                        // Fallback to click if showPicker fails
+                        dateInputRef.current?.click();
+                    });
+                } else {
+                    // Se showPicker não retornou uma Promise, usar fallback direto
+                    dateInputRef.current.click();
+                }
             } else {
                 // Fallback for older browsers
                 dateInputRef.current.click();
