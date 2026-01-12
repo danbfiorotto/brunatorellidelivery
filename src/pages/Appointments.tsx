@@ -212,17 +212,41 @@ const Appointments: React.FC = () => {
     const formDraftKey = editingAppointment ? `appointment_edit_${editingAppointment.id}` : 'appointment_create';
     const storageKey = `form_draft_${formDraftKey}`;
     
+    // Função para limpar rascunho (declarada primeiro para ser usada em saveDraft)
+    const clearDraft = useCallback(() => {
+        try {
+            localStorage.removeItem(storageKey);
+            logger.debug('Appointments - Draft cleared', { key: formDraftKey });
+        } catch (error) {
+            logger.error(error, { context: 'clearDraft' });
+        }
+    }, [storageKey, formDraftKey]);
+    
     // Função para salvar rascunho manualmente
     const saveDraft = useCallback(() => {
         if (!isModalOpen) return;
+        
+        // Não salvar se o formulário estiver vazio (após salvar com sucesso)
+        const currentData = formDataRef.current;
+        const isEmpty = !currentData.patient_name && 
+                       !currentData.date && 
+                       !currentData.procedure && 
+                       !currentData.value;
+        
+        if (isEmpty) {
+            // Se estiver vazio, limpar rascunho em vez de salvar
+            clearDraft();
+            return;
+        }
+        
         try {
-            const serialized = JSON.stringify(formDataRef.current);
+            const serialized = JSON.stringify(currentData);
             localStorage.setItem(storageKey, serialized);
             logger.debug('Appointments - Draft saved manually', { key: formDraftKey });
         } catch (error) {
             logger.error(error, { context: 'saveDraft' });
         }
-    }, [isModalOpen, storageKey, formDraftKey]);
+    }, [isModalOpen, storageKey, formDraftKey, clearDraft]);
     
     // Função para restaurar rascunho
     const restoreDraft = useCallback(() => {
@@ -241,19 +265,21 @@ const Appointments: React.FC = () => {
         }
     }, [isModalOpen, storageKey, formDraftKey]);
     
-    // Função para limpar rascunho
-    const clearDraft = useCallback(() => {
-        try {
-            localStorage.removeItem(storageKey);
-            logger.debug('Appointments - Draft cleared', { key: formDraftKey });
-        } catch (error) {
-            logger.error(error, { context: 'clearDraft' });
-        }
-    }, [storageKey, formDraftKey]);
-    
     // Salvar rascunho apenas quando modal fecha ou página esconde (não a cada keystroke)
     useEffect(() => {
-        if (!isModalOpen) return;
+        if (!isModalOpen) {
+            // Quando modal fecha, verificar se formulário está vazio
+            // Se estiver vazio, limpar rascunho (foi salvo com sucesso)
+            const isEmpty = !formDataRef.current.patient_name && 
+                           !formDataRef.current.date && 
+                           !formDataRef.current.procedure && 
+                           !formDataRef.current.value;
+            
+            if (isEmpty) {
+                clearDraft();
+            }
+            return;
+        }
         
         // Salvar periodicamente apenas quando modal está aberto (a cada 30 segundos)
         const saveInterval = setInterval(() => {
@@ -262,10 +288,17 @@ const Appointments: React.FC = () => {
         
         return () => {
             clearInterval(saveInterval);
-            // Salvar ao desmontar
-            saveDraft();
+            // Salvar ao desmontar apenas se houver dados
+            const hasData = formDataRef.current.patient_name || 
+                          formDataRef.current.date || 
+                          formDataRef.current.procedure || 
+                          formDataRef.current.value;
+            
+            if (hasData) {
+                saveDraft();
+            }
         };
-    }, [isModalOpen, saveDraft]);
+    }, [isModalOpen, saveDraft, clearDraft]);
     
     // AbortControllers para requisições pendentes
     const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
@@ -318,14 +351,17 @@ const Appointments: React.FC = () => {
         },
         onPageRestored: () => {
             logger.debug('Appointments - Page restored from BFCache');
-            // Restaurar rascunho
-            restoreDraft();
-            
-            // Revalidar formulário
-            if (formRef.current) {
-                requestAnimationFrame(() => {
-                    formRef.current?.reportValidity();
-                });
+            // Restaurar rascunho apenas se o modal estiver aberto
+            // Isso garante que os dados sejam recuperados apenas quando necessário
+            if (isModalOpen) {
+                restoreDraft();
+                
+                // Revalidar formulário
+                if (formRef.current) {
+                    requestAnimationFrame(() => {
+                        formRef.current?.reportValidity();
+                    });
+                }
             }
         },
     });
@@ -746,20 +782,10 @@ const Appointments: React.FC = () => {
             }
         } else {
             setEditingAppointment(null);
-            // Tentar restaurar rascunho se houver
-            try {
-                const stored = localStorage.getItem(`form_draft_appointment_create`);
-                if (stored) {
-                    const parsed = JSON.parse(stored) as AppointmentFormData;
-                    setFormData(parsed);
-                } else {
-                    const newFormData = { ...initialFormData, currency: currency || 'BRL' };
-                    setFormData(newFormData);
-                }
-            } catch {
-                const newFormData = { ...initialFormData, currency: currency || 'BRL' };
-                setFormData(newFormData);
-            }
+            // Sempre começar com formulário limpo quando abrir modal normalmente
+            // O rascunho só será restaurado se a página for restaurada do BFCache (via onPageRestored)
+            const newFormData = { ...initialFormData, currency: currency || 'BRL' };
+            setFormData(newFormData);
             setValueDisplay('');
         }
         setIsModalOpen(true);
@@ -1106,14 +1132,15 @@ const Appointments: React.FC = () => {
                 }
             }
             
-            // Limpar rascunho após salvamento bem-sucedido
+            // Limpar rascunho e formulário ANTES de fechar modal
             clearDraft();
-            
-            // Fechar modal e limpar formulário ANTES de recarregar dados
-            setIsModalOpen(false);
-            setFormData(initialFormData);
+            setFormData({ ...initialFormData, currency: currency || 'BRL' });
             setEditingAppointment(null);
             setValidationErrors({});
+            setValueDisplay('');
+            
+            // Fechar modal após limpar tudo
+            setIsModalOpen(false);
             
             // Resetar estado de submit ANTES de operações assíncronas
             setIsSubmitting(false);
