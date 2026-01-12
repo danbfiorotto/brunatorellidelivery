@@ -87,10 +87,16 @@ export class CreateAppointmentUseCase implements ICreateAppointmentUseCase {
         // 5. Persistir
         const created = await this.appointmentRepository.create(appointment);
         
-        // 6. Side effects (em paralelo)
-        await Promise.all([
-            this.updatePatientLastVisit(patientId, appointment.date),
-            this.auditService.log('create', 'appointment', created.id, null, created.toJSON())
+        // 6. Side effects (em paralelo) - com tratamento de erros para não falhar a criação
+        await Promise.allSettled([
+            this.updatePatientLastVisit(patientId, appointment.date).catch((error) => {
+                // Não falhar criação se atualização de lastVisit falhar
+                logger.warn('Failed to update patient last visit', { patientId, error });
+            }),
+            this.auditService.log('create', 'appointment', created.id, null, created.toJSON()).catch((error) => {
+                // Não falhar criação se audit log falhar (pode ser problema de permissão)
+                logger.warn('Failed to log audit action', { error, action: 'create', resourceType: 'appointment', resourceId: created.id });
+            })
         ]);
         
         return { appointment: created };

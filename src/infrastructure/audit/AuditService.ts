@@ -51,7 +51,7 @@ export class AuditService implements IAuditService {
             // Verificar se navigator está disponível (não está em SSR/build)
             const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : null;
             
-            await supabase.from('audit_logs').insert({
+            const { error } = await supabase.from('audit_logs').insert({
                 user_id: session.user.id,
                 action,
                 resource_type: resourceType,
@@ -61,9 +61,23 @@ export class AuditService implements IAuditService {
                 ip_address: await getClientIP(),
                 user_agent: userAgent
             });
+            
+            // Se houver erro (ex: 403 Forbidden por falta de permissão), apenas logar mas não falhar
+            if (error) {
+                logger.warn('Failed to log audit action', { 
+                    error: error.message, 
+                    code: error.code,
+                    action, 
+                    resourceType, 
+                    resourceId 
+                });
+            }
         } catch (error) {
             // Não falhar se logging falhar
-            logger.error(error, { context: 'AuditService.log' });
+            logger.warn('AuditService.log exception', { 
+                error: error instanceof Error ? error.message : String(error), 
+                context: 'AuditService.log' 
+            });
         }
     }
 }
