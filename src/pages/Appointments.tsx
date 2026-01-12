@@ -710,17 +710,23 @@ const Appointments: React.FC = () => {
         setIsModalOpen(true);
     };
 
-    const handleSubmit = async (e: FormEvent<HTMLFormElement>): Promise<void> => {
-        e.preventDefault();
-        // Removido e.stopPropagation() - pode causar problemas no mobile
-        
+    // Função de submit reutilizável que pode ser chamada de diferentes formas
+    const performSubmit = async (): Promise<void> => {
         // Prevenir múltiplos submits
         if (isSubmitting) {
             logger.debug('Submit blocked: already submitting');
             return;
         }
         
-        logger.debug('Starting submit process');
+        logger.debug('Starting submit process', { 
+            formData: {
+                date: formData.date,
+                time: formData.time,
+                patient_name: formData.patient_name,
+                procedure: formData.procedure
+            }
+        });
+        
         setIsSubmitting(true);
         
         try {
@@ -736,12 +742,17 @@ const Appointments: React.FC = () => {
         };
         
         // Validate data - permitir datas passadas pois atendimentos são preenchidos após o procedimento
+        logger.debug('Validating appointment data', { dataToValidate });
         const validation = validateAppointment(dataToValidate, { allowPastDates: true });
         if (!validation.isValid) {
+            logger.warn('Validation failed', { errors: validation.errors });
             setValidationErrors(validation.errors);
             setIsSubmitting(false);
+            // Mostrar erro visual para o usuário
+            showError('Por favor, preencha todos os campos obrigatórios corretamente.');
             return;
         }
+        logger.debug('Validation passed');
         
         // Clear validation errors
         setValidationErrors({});
@@ -822,12 +833,16 @@ const Appointments: React.FC = () => {
             const isEditing = !!editingAppointment;
             
             if (isEditing) {
+                logger.debug('Updating appointment', { appointmentId: editingAppointment!.id });
                 const updated = await appointmentService.update(editingAppointment!.id, dataToSave);
+                logger.debug('Appointment updated successfully', { appointmentId: updated.id });
                 appointmentId = updated.id;
                 patientId = updated.patientId;
             } else {
+                logger.debug('Creating new appointment');
                 // Permitir datas passadas pois atendimentos são preenchidos após o procedimento
                 const created = await appointmentService.create(dataToSave, true);
+                logger.debug('Appointment created successfully', { appointmentId: created.id });
                 appointmentId = created.id;
                 patientId = created.patientId;
             }
@@ -931,6 +946,45 @@ const Appointments: React.FC = () => {
                 logger.error(handleErrorException, { context: 'handleError in saveAppointment' });
             }
         }
+    };
+
+    // Handler para o evento onSubmit do formulário
+    const handleSubmit = async (e: FormEvent<HTMLFormElement>): Promise<void> => {
+        e.preventDefault();
+        e.stopPropagation();
+        logger.debug('Form submit event triggered');
+        await performSubmit();
+    };
+
+    // Handler para onClick do botão (fallback para mobile)
+    const handleButtonClick = async (e: React.MouseEvent<HTMLButtonElement> | React.TouchEvent<HTMLButtonElement>): Promise<void> => {
+        e.preventDefault();
+        e.stopPropagation();
+        logger.debug('Button click/touch event triggered', { 
+            isSubmitting,
+            formValid: formRef.current?.checkValidity() 
+        });
+        
+        // Não fazer nada se já estiver submetendo
+        if (isSubmitting) {
+            logger.debug('Already submitting, ignoring click');
+            return;
+        }
+        
+        // Verificar validação HTML5 antes de submeter
+        if (formRef.current) {
+            const form = formRef.current;
+            if (!form.checkValidity()) {
+                logger.debug('Form validation failed, showing native validation');
+                // Usar requestAnimationFrame para garantir que o reportValidity funcione no mobile
+                requestAnimationFrame(() => {
+                    form.reportValidity();
+                });
+                return;
+            }
+        }
+        
+        await performSubmit();
     };
 
     const handlePatientNameChange = (value: string): void => {
@@ -1370,7 +1424,18 @@ const Appointments: React.FC = () => {
                 title={editingAppointment ? t('appointments.editAppointment') : t('appointments.newAppointment')}
                 size="xl"
             >
-                <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
+                <form 
+                    ref={formRef} 
+                    onSubmit={handleSubmit} 
+                    className="space-y-4"
+                    noValidate={false}
+                    onTouchEnd={(e) => {
+                        // Log para debug no mobile
+                        if (e.target === e.currentTarget) {
+                            logger.debug('Form onTouchEnd triggered');
+                        }
+                    }}
+                >
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                             <label className="block text-sm font-semibold text-slate-700 dark:text-gray-300 mb-2">{t('appointments.clinicRequired')}</label>
@@ -1959,6 +2024,21 @@ const Appointments: React.FC = () => {
                         <Button 
                             type="submit" 
                             disabled={isSubmitting}
+                            onClick={(e) => {
+                                logger.debug('Button onClick triggered');
+                                handleButtonClick(e);
+                            }}
+                            onTouchStart={(e) => {
+                                // Prevenir comportamento padrão do touch
+                                logger.debug('Button onTouchStart triggered');
+                            }}
+                            onTouchEnd={(e) => {
+                                // Garantir que eventos touch funcionem no mobile
+                                logger.debug('Button onTouchEnd triggered');
+                                e.preventDefault();
+                                e.stopPropagation();
+                                handleButtonClick(e);
+                            }}
                         >
                             {isSubmitting 
                                 ? t('common.saving') || 'Salvando...' 
