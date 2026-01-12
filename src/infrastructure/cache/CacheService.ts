@@ -99,47 +99,98 @@ export class CacheService implements ICacheService {
     }
 
     /**
+     * Obtém um valor do cache diretamente (sem enfileiramento)
+     * ✅ Método interno usado dentro de operações já enfileiradas
+     */
+    private getDirect<T = unknown>(key: string): T | null {
+        // 1. Tentar memória primeiro (mais rápido)
+        const memoryItem = this.memoryCache.get(key);
+        if (memoryItem && Date.now() <= memoryItem.expiresAt) {
+            // ✅ Atualizar ordem de acesso (LRU)
+            this.updateAccessOrder(key);
+            return memoryItem.value as T;
+        }
+        
+        // 2. Tentar storage persistente
+        if (this.storage) {
+            const stored = this.storage.getItem(this.storagePrefix + key);
+            if (stored) {
+                try {
+                    const item = JSON.parse(stored) as CacheItem;
+                    if (Date.now() <= item.expiresAt) {
+                        // Restaurar na memória com ordem de acesso atualizada
+                        this.memoryCache.set(key, { ...item, lastAccessed: Date.now() });
+                        this.updateAccessOrder(key);
+                        return item.value as T;
+                    } else {
+                        // Expirou, remover
+                        this.storage.removeItem(this.storagePrefix + key);
+                    }
+                } catch {
+                    // Dados corrompidos, remover
+                    this.storage.removeItem(this.storagePrefix + key);
+                }
+            }
+        }
+        
+        return null;
+    }
+
+    /**
      * Obtém um valor do cache
      * ✅ Atualiza ordem de acesso para LRU
      * ✅ Usa fila de operações para evitar race conditions
      */
     async get<T = unknown>(key: string): Promise<T | null> {
-        // ✅ Adicionar à fila de operações para evitar concorrência
-        return this.enqueueOperation(async () => {
-            // 1. Tentar memória primeiro (mais rápido)
-            const memoryItem = this.memoryCache.get(key);
-            if (memoryItem && Date.now() <= memoryItem.expiresAt) {
-                // ✅ Atualizar ordem de acesso (LRU)
-                this.updateAccessOrder(key);
-                return memoryItem.value as T;
-            }
-            
-            // 2. Tentar storage persistente
-            if (this.storage) {
-                const stored = this.storage.getItem(this.storagePrefix + key);
-                if (stored) {
+        return this.enqueueOperation(() => Promise.resolve(this.getDirect<T>(key)));
+    }
+    
+
+    /**
+     * Define um valor no cache diretamente (sem enfileiramento)
+     * ✅ Método interno usado dentro de operações já enfileiradas
+     */
+    private setDirect<T = unknown>(key: string, value: T, ttl: number | null = null): void {
+        const now = Date.now();
+        const expiresAt = now + (ttl || this.defaultTTL);
+        const item: CacheItem<T> = { value, expiresAt, lastAccessed: now };
+        
+        // ✅ Atualizar ordem de acesso (LRU)
+        this.updateAccessOrder(key);
+        
+        // Armazenar na memória
+        this.memoryCache.set(key, item);
+        
+        // Verificar limite de memória antes de adicionar
+        if (this.memoryCache.size > this.maxMemoryItems) {
+            this.enforceMemoryLimit();
+        }
+        
+        // Armazenar no storage (apenas se serializável)
+        if (this.storage && this.isSerializable(value)) {
+            try {
+                const serialized = JSON.stringify(item);
+                const currentSize = this.getStorageSize();
+                
+                // Verificar se excede tamanho máximo
+                if (currentSize + serialized.length > this.maxStorageSize) {
+                    this.cleanupExpired();
+                }
+                
+                this.storage.setItem(this.storagePrefix + key, serialized);
+            } catch (error) {
+                if ((error as Error).name === 'QuotaExceededError') {
+                    // Storage cheio, tentar limpar e tentar novamente
+                    this.cleanupExpired();
                     try {
-                        const item = JSON.parse(stored) as CacheItem;
-                        if (Date.now() <= item.expiresAt) {
-                            // Restaurar na memória com ordem de acesso atualizada
-                            this.memoryCache.set(key, { ...item, lastAccessed: Date.now() });
-                            this.updateAccessOrder(key);
-                            return item.value as T;
-                        } else {
-                            // Expirou, remover
-                            this.storage.removeItem(this.storagePrefix + key);
-                        }
+                        this.storage.setItem(this.storagePrefix + key, JSON.stringify(item));
                     } catch {
-                        // Dados corrompidos, remover
-                        this.storage.removeItem(this.storagePrefix + key);
+                        console.warn('Storage full, cache not persisted');
                     }
                 }
             }
-            
-            return null;
-        });
+        }
     }
-    
 
     /**
      * Define um valor no cache
@@ -147,46 +198,9 @@ export class CacheService implements ICacheService {
      * ✅ Usa fila de operações para evitar race conditions
      */
     async set<T = unknown>(key: string, value: T, ttl: number | null = null): Promise<void> {
-        return this.enqueueOperation(async () => {
-            const now = Date.now();
-            const expiresAt = now + (ttl || this.defaultTTL);
-            const item: CacheItem<T> = { value, expiresAt, lastAccessed: now };
-            
-            // ✅ Atualizar ordem de acesso (LRU)
-            this.updateAccessOrder(key);
-            
-            // Armazenar na memória
-            this.memoryCache.set(key, item);
-            
-            // Verificar limite de memória antes de adicionar
-            if (this.memoryCache.size > this.maxMemoryItems) {
-                this.enforceMemoryLimit();
-            }
-            
-            // Armazenar no storage (apenas se serializável)
-            if (this.storage && this.isSerializable(value)) {
-                try {
-                    const serialized = JSON.stringify(item);
-                    const currentSize = this.getStorageSize();
-                    
-                    // Verificar se excede tamanho máximo
-                    if (currentSize + serialized.length > this.maxStorageSize) {
-                        this.cleanupExpired();
-                    }
-                    
-                    this.storage.setItem(this.storagePrefix + key, serialized);
-                } catch (error) {
-                    if ((error as Error).name === 'QuotaExceededError') {
-                        // Storage cheio, tentar limpar e tentar novamente
-                        this.cleanupExpired();
-                        try {
-                            this.storage.setItem(this.storagePrefix + key, JSON.stringify(item));
-                        } catch {
-                            console.warn('Storage full, cache not persisted');
-                        }
-                    }
-                }
-            }
+        return this.enqueueOperation(() => {
+            this.setDirect(key, value, ttl);
+            return Promise.resolve();
         });
     }
     
@@ -223,23 +237,29 @@ export class CacheService implements ICacheService {
     }
 
     /**
+     * Remove um item do cache diretamente (sem enfileiramento)
+     * ✅ Método interno usado dentro de operações já enfileiradas
+     */
+    private deleteDirect(key: string): boolean {
+        const memoryDeleted = this.memoryCache.delete(key);
+        this.accessOrder.delete(key); // ✅ Remover da ordem de acesso
+        
+        if (this.storage) {
+            try {
+                this.storage.removeItem(this.storagePrefix + key);
+            } catch {
+                console.warn('Failed to delete from storage');
+            }
+        }
+        return memoryDeleted;
+    }
+
+    /**
      * Remove um item do cache
      * ✅ Usa fila de operações para evitar race conditions
      */
     async delete(key: string): Promise<boolean> {
-        return this.enqueueOperation(async () => {
-            const memoryDeleted = this.memoryCache.delete(key);
-            this.accessOrder.delete(key); // ✅ Remover da ordem de acesso
-            
-            if (this.storage) {
-                try {
-                    this.storage.removeItem(this.storagePrefix + key);
-                } catch {
-                    console.warn('Failed to delete from storage');
-                }
-            }
-            return memoryDeleted;
-        });
+        return this.enqueueOperation(() => Promise.resolve(this.deleteDirect(key)));
     }
     
 
@@ -297,37 +317,43 @@ export class CacheService implements ICacheService {
     /**
      * Define um valor no cache com tags para invalidação
      * ✅ Usa operações assíncronas para evitar race conditions
+     * ✅ Usa métodos diretos para evitar deadlock
      */
     async setWithTags<T = unknown>(key: string, value: T, tags: string[] = [], ttl: number | null = null): Promise<void> {
-        await this.set(key, value, ttl);
-        
-        // ✅ Processar tags sequencialmente para evitar race conditions
-        for (const tag of tags) {
-            const tagKey = `tag:${tag}`;
-            const tagItems = (await this.get<string[]>(tagKey)) || [];
-            if (!tagItems.includes(key)) {
-                tagItems.push(key);
-                await this.set(tagKey, tagItems, ttl);
+        return this.enqueueOperation(async () => {
+            // Definir o valor principal usando método direto
+            this.setDirect(key, value, ttl);
+            
+            // Processar tags usando métodos diretos
+            for (const tag of tags) {
+                const tagKey = `tag:${tag}`;
+                const keys = this.getDirect<string[]>(tagKey) || [];
+                if (!keys.includes(key)) {
+                    keys.push(key);
+                }
+                // TTL padrão de 24 horas para tags
+                this.setDirect(tagKey, keys, 24 * 60 * 60 * 1000);
             }
-        }
+        });
     }
     
     
     /**
      * Invalida todos os itens com uma tag específica
      * ✅ Usa operações assíncronas para evitar race conditions
+     * ✅ Usa métodos diretos para evitar deadlock
      */
     async invalidateByTag(tag: string): Promise<void> {
         return this.enqueueOperation(async () => {
             const tagKey = `tag:${tag}`;
-            const keys = (await this.get<string[]>(tagKey)) || [];
+            const keys = this.getDirect<string[]>(tagKey) || [];
             
-            // ✅ Deletar todos os itens da tag
+            // ✅ Deletar todos os itens da tag usando método direto
             for (const key of keys) {
-                await this.delete(key);
+                this.deleteDirect(key);
             }
             
-            await this.delete(tagKey);
+            this.deleteDirect(tagKey);
         });
     }
     
