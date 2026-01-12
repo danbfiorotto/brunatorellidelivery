@@ -163,6 +163,7 @@ const Appointments: React.FC = () => {
     const [uploadingFiles, setUploadingFiles] = useState<boolean>(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const formRef = useRef<HTMLFormElement>(null);
+    const submitTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const [patientSuggestions, setPatientSuggestions] = useState<Patient[]>([]);
     const [showSuggestions, setShowSuggestions] = useState<boolean>(false);
     const patientInputRef = useRef<HTMLInputElement>(null);
@@ -318,6 +319,36 @@ const Appointments: React.FC = () => {
             // Em caso de erro, manter os valores atuais
         }
     };
+
+    // Timeout de segurança para garantir que isSubmitting seja resetado
+    useEffect(() => {
+        if (isSubmitting) {
+            // Limpar timeout anterior se existir
+            if (submitTimeoutRef.current) {
+                clearTimeout(submitTimeoutRef.current);
+            }
+            
+            // Definir timeout de segurança (30 segundos)
+            submitTimeoutRef.current = setTimeout(() => {
+                logger.warn('Submit timeout: forcing isSubmitting to false');
+                setIsSubmitting(false);
+                submitTimeoutRef.current = null;
+            }, 30000);
+            
+            return () => {
+                if (submitTimeoutRef.current) {
+                    clearTimeout(submitTimeoutRef.current);
+                    submitTimeoutRef.current = null;
+                }
+            };
+        } else {
+            // Limpar timeout se não estiver mais submetendo
+            if (submitTimeoutRef.current) {
+                clearTimeout(submitTimeoutRef.current);
+                submitTimeoutRef.current = null;
+            }
+        }
+    }, [isSubmitting]);
 
     useEffect(() => {
         const abortController = new AbortController();
@@ -788,9 +819,10 @@ const Appointments: React.FC = () => {
             
             let appointmentId: string;
             let patientId: string | null;
+            const isEditing = !!editingAppointment;
             
-            if (editingAppointment) {
-                const updated = await appointmentService.update(editingAppointment.id, dataToSave);
+            if (isEditing) {
+                const updated = await appointmentService.update(editingAppointment!.id, dataToSave);
                 appointmentId = updated.id;
                 patientId = updated.patientId;
             } else {
@@ -841,6 +873,7 @@ const Appointments: React.FC = () => {
                 }
             }
             
+            // Fechar modal e limpar formulário ANTES de recarregar dados
             setIsModalOpen(false);
             setFormData({
                 clinic_id: '',
@@ -863,21 +896,40 @@ const Appointments: React.FC = () => {
             });
             setEditingAppointment(null);
             setValidationErrors({});
-            loadData();
-            // Recarregar totais após salvar/atualizar
-            loadTotalStats();
+            
+            // Resetar estado de submit ANTES de operações assíncronas
+            setIsSubmitting(false);
+            
+            // Mostrar mensagem de sucesso
+            showSuccess(
+                isEditing 
+                    ? t('appointments.updateSuccess') || 'Atendimento atualizado com sucesso!'
+                    : t('appointments.createSuccess') || 'Atendimento criado com sucesso!'
+            );
+            
+            // Recarregar dados de forma assíncrona e não-bloqueante
+            // Usar setTimeout para garantir que o estado seja atualizado primeiro
+            setTimeout(() => {
+                loadData().catch((error) => {
+                    logger.error(error, { context: 'loadData after save' });
+                });
+                loadTotalStats().catch((error) => {
+                    logger.error(error, { context: 'loadTotalStats after save' });
+                });
+            }, 100);
+            
         } catch (error) {
             logger.error(error, { context: 'saveAppointment' });
+            
+            // Sempre resetar estado, mesmo em caso de erro
+            setIsSubmitting(false);
+            
             try {
                 handleError(error, 'Appointments.saveAppointment');
             } catch (handleErrorException) {
                 // Se handleError lançar uma exceção, logar mas não falhar
                 logger.error(handleErrorException, { context: 'handleError in saveAppointment' });
             }
-        } finally {
-            // Sempre garantir que o estado seja resetado, mesmo em caso de erro
-            logger.debug('Resetting isSubmitting state');
-            setIsSubmitting(false);
         }
     };
 
