@@ -25,7 +25,6 @@ import { logger } from '../lib/logger';
 import { IAuthClient } from '../infrastructure/auth/IAuthClient';
 import { AuthenticationError } from '../domain/errors/AppError';
 import { useSessionManager } from '../hooks/useSessionManager';
-import { useFormDraft } from '../hooks/useFormDraft';
 import { useOfflineQueue } from '../hooks/useOfflineQueue';
 import { withTimeout, TimeoutError, AbortedError } from '../lib/fetchWithTimeout';
 
@@ -199,28 +198,74 @@ const Appointments: React.FC = () => {
         radiographs: []
     };
     
-    const [formData, setFormDataState] = useState<AppointmentFormData>(initialFormData);
+    const [formData, setFormData] = useState<AppointmentFormData>(initialFormData);
     
-    // Persistência de rascunho do formulário
-    const formDraft = useFormDraft<AppointmentFormData>({
-        key: editingAppointment ? `appointment_edit_${editingAppointment.id}` : 'appointment_create',
-        initialData: initialFormData,
-        enabled: isModalOpen,
-        onRestore: (restoredData) => {
-            logger.debug('Appointments - Form draft restored', { data: restoredData });
-            setFormDataState(restoredData);
-        },
-    });
+    // Ref para rastrear dados do formulário para salvar rascunho (sem causar re-renders)
+    const formDataRef = useRef<AppointmentFormData>(initialFormData);
     
-    // Wrapper para atualizar formData e rascunho simultaneamente
-    const setFormData = useCallback((data: AppointmentFormData | ((prev: AppointmentFormData) => AppointmentFormData)) => {
-        setFormDataState((prev: AppointmentFormData) => {
-            const newData = typeof data === 'function' ? (data as (prev: AppointmentFormData) => AppointmentFormData)(prev) : data;
-            // Atualizar rascunho automaticamente
-            formDraft.setData(newData);
-            return newData;
-        });
-    }, [formDraft]);
+    // Atualizar ref sempre que formData mudar (sem causar re-render)
+    useEffect(() => {
+        formDataRef.current = formData;
+    }, [formData]);
+    
+    // Persistência de rascunho do formulário (apenas restore/clear, sem auto-save para evitar flickering)
+    const formDraftKey = editingAppointment ? `appointment_edit_${editingAppointment.id}` : 'appointment_create';
+    const storageKey = `form_draft_${formDraftKey}`;
+    
+    // Função para salvar rascunho manualmente
+    const saveDraft = useCallback(() => {
+        if (!isModalOpen) return;
+        try {
+            const serialized = JSON.stringify(formDataRef.current);
+            localStorage.setItem(storageKey, serialized);
+            logger.debug('Appointments - Draft saved manually', { key: formDraftKey });
+        } catch (error) {
+            logger.error(error, { context: 'saveDraft' });
+        }
+    }, [isModalOpen, storageKey, formDraftKey]);
+    
+    // Função para restaurar rascunho
+    const restoreDraft = useCallback(() => {
+        if (!isModalOpen) return;
+        try {
+            const stored = localStorage.getItem(storageKey);
+            if (stored) {
+                const parsed = JSON.parse(stored) as AppointmentFormData;
+                logger.debug('Appointments - Draft restored', { key: formDraftKey });
+                setFormData(parsed);
+                formDataRef.current = parsed;
+            }
+        } catch (error) {
+            logger.error(error, { context: 'restoreDraft' });
+            localStorage.removeItem(storageKey);
+        }
+    }, [isModalOpen, storageKey, formDraftKey]);
+    
+    // Função para limpar rascunho
+    const clearDraft = useCallback(() => {
+        try {
+            localStorage.removeItem(storageKey);
+            logger.debug('Appointments - Draft cleared', { key: formDraftKey });
+        } catch (error) {
+            logger.error(error, { context: 'clearDraft' });
+        }
+    }, [storageKey, formDraftKey]);
+    
+    // Salvar rascunho apenas quando modal fecha ou página esconde (não a cada keystroke)
+    useEffect(() => {
+        if (!isModalOpen) return;
+        
+        // Salvar periodicamente apenas quando modal está aberto (a cada 30 segundos)
+        const saveInterval = setInterval(() => {
+            saveDraft();
+        }, 30000); // Salvar a cada 30 segundos
+        
+        return () => {
+            clearInterval(saveInterval);
+            // Salvar ao desmontar
+            saveDraft();
+        };
+    }, [isModalOpen, saveDraft]);
     
     // AbortControllers para requisições pendentes
     const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
@@ -269,12 +314,12 @@ const Appointments: React.FC = () => {
             abortControllersRef.current.clear();
             
             // Salvar rascunho
-            formDraft.forceSave();
+            saveDraft();
         },
         onPageRestored: () => {
             logger.debug('Appointments - Page restored from BFCache');
             // Restaurar rascunho
-            formDraft.restoreDraft();
+            restoreDraft();
             
             // Revalidar formulário
             if (formRef.current) {
@@ -689,7 +734,6 @@ const Appointments: React.FC = () => {
             };
             
             setFormData(editFormData);
-            formDraft.setData(editFormData);
             
             // Set formatted value display for editing
             if (appointment.value) {
@@ -703,12 +747,18 @@ const Appointments: React.FC = () => {
         } else {
             setEditingAppointment(null);
             // Tentar restaurar rascunho se houver
-            if (formDraft.hasDraft()) {
-                formDraft.restoreDraft();
-            } else {
+            try {
+                const stored = localStorage.getItem(`form_draft_appointment_create`);
+                if (stored) {
+                    const parsed = JSON.parse(stored) as AppointmentFormData;
+                    setFormData(parsed);
+                } else {
+                    const newFormData = { ...initialFormData, currency: currency || 'BRL' };
+                    setFormData(newFormData);
+                }
+            } catch {
                 const newFormData = { ...initialFormData, currency: currency || 'BRL' };
                 setFormData(newFormData);
-                formDraft.setData(newFormData);
             }
             setValueDisplay('');
         }
@@ -851,7 +901,7 @@ const Appointments: React.FC = () => {
                 }
                 
                 // Limpar rascunho e fechar modal
-                formDraft.clearDraft();
+                clearDraft();
                 setIsModalOpen(false);
                 setIsSubmitting(false);
                 abortControllersRef.current.delete(operationId);
@@ -1057,7 +1107,7 @@ const Appointments: React.FC = () => {
             }
             
             // Limpar rascunho após salvamento bem-sucedido
-            formDraft.clearDraft();
+            clearDraft();
             
             // Fechar modal e limpar formulário ANTES de recarregar dados
             setIsModalOpen(false);

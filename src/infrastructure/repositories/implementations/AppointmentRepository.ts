@@ -336,7 +336,16 @@ export class AppointmentRepository extends BaseRepository implements IAppointmen
                 return this.calculateTotalsFallback();
             }
             
-            const totals = result as AppointmentTotals;
+            // Supabase RPC retorna JSON, pode ser string ou objeto
+            let totals: AppointmentTotals;
+            if (typeof result === 'string') {
+                totals = JSON.parse(result) as AppointmentTotals;
+            } else if (Array.isArray(result) && result.length > 0) {
+                // Se retornar array, pegar primeiro elemento
+                totals = typeof result[0] === 'string' ? JSON.parse(result[0]) : result[0] as AppointmentTotals;
+            } else {
+                totals = result as AppointmentTotals;
+            }
             
             logger.debug('AppointmentRepository.getTotals - Success', { totals });
             
@@ -348,7 +357,13 @@ export class AppointmentRepository extends BaseRepository implements IAppointmen
                 byStatus: totals.byStatus || { scheduled: 0, pending: 0, paid: 0 }
             };
         } catch (error) {
-            logger.error(error, { context: 'AppointmentRepository.getTotals - RPC failed' });
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            // Se for 404, a função não existe no banco
+            if (errorMessage.includes('404') || errorMessage.includes('Not Found') || errorMessage.includes('does not exist')) {
+                logger.warn('AppointmentRepository.getTotals - RPC function not found in database. Please run supabase_create_rpc_function.sql', { error: errorMessage });
+            } else {
+                logger.error(error, { context: 'AppointmentRepository.getTotals - RPC failed' });
+            }
             return this.calculateTotalsFallback();
         }
     }
