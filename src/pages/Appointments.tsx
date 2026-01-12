@@ -193,128 +193,21 @@ const Appointments: React.FC = () => {
         radiographs: []
     });
 
-    // Função para carregar totais de todos os appointments (sem paginação)
+    // Função para carregar totais de todos os appointments via RPC (otimizado)
+    // Usa cálculo server-side ao invés de buscar milhares de registros
     const loadTotalStats = async (): Promise<void> => {
         try {
-            // Buscar todos os appointments sem paginação (usando limit alto)
-            // O BaseRepository usa 1000 como padrão quando não especifica page/pageSize
-            const allAppointmentsResult = await appointmentService.getAll({
-                limit: 10000, // Limite alto para buscar todos
-                orderBy: 'date',
-                orderDirection: 'desc',
-                filters: {} // Sem filtros para pegar todos
-            });
-            
-            const allAppointments = Array.isArray(allAppointmentsResult)
-                ? allAppointmentsResult
-                : (allAppointmentsResult as PaginatedResponse<Appointment>)?.data || [];
-            
-            // Usar total da paginação se disponível (mais confiável)
-            const totalCount = Array.isArray(allAppointmentsResult)
-                ? allAppointments.length
-                : (allAppointmentsResult as PaginatedResponse<Appointment>)?.pagination?.total || allAppointments.length;
-            
-            // Debug: verificar status dos appointments
-            const statusCounts = allAppointments.reduce((acc, app) => {
-                const status = app.status?.toString() || String(app.status);
-                acc[status] = (acc[status] || 0) + 1;
-                return acc;
-            }, {} as Record<string, number>);
-            
-            console.log('loadTotalStats - Status counts', statusCounts);
-            console.log('loadTotalStats - Sample appointments', allAppointments.slice(0, 5).map(app => ({
-                id: app.id,
-                status: app.status,
-                statusType: typeof app.status,
-                statusString: app.status?.toString(),
-                isPaid: app.isPaid,
-                value: app.value?.amount,
-                paymentType: app.paymentType?.type,
-                paymentPercentage: app.paymentType?.percentage
-            })));
-            
-            const received = allAppointments
-                .filter((app: Appointment) => {
-                    const status = app.status?.toString() || String(app.status);
-                    return status === 'paid';
-                })
-                .reduce((sum: number, app: Appointment) => {
-                    const receivedValue = app.calculateReceivedValue();
-                    return sum + receivedValue.amount;
-                }, 0);
-            
-            // Para pendente, considerar tanto 'pending' quanto 'scheduled' (que ainda não foram pagos)
-            // O valor pendente é o valor total do appointment, pois se está pendente/scheduled, não recebeu nada ainda
-            const pendingAppointments = allAppointments.filter((app: Appointment) => {
-                const status = app.status?.toString() || String(app.status);
-                const isPending = status === 'pending' || status === 'scheduled';
-                return isPending;
-            });
-            
-            console.log('Pending appointments found', {
-                count: pendingAppointments.length,
-                sample: pendingAppointments.slice(0, 3).map(app => ({
-                    id: app.id,
-                    status: app.status?.toString(),
-                    isPaid: app.isPaid,
-                    value: app.value?.amount
-                }))
-            });
-            
-            const pending = pendingAppointments.reduce((sum: number, app: Appointment) => {
-                const totalValue = app.value.amount;
-                const status = app.status?.toString() || String(app.status);
-                const isPaid = app.isPaid;
-                
-                // IMPORTANTE: Se o appointment está pendente/scheduled, ele NÃO está pago
-                // Portanto, o valor recebido REAL é 0 (independente do tipo de pagamento)
-                // O calculateReceivedValue() calcula o valor POTENCIAL que SERIA recebido se estivesse pago
-                // Mas para appointments não pagos, o valor recebido REAL é sempre 0
-                // O valor pendente é o valor total menos o valor recebido (que é 0 para não pagos)
-                const receivedValue = 0; // Appointments pendentes não receberam nada ainda
-                const pendingValue = totalValue - receivedValue;
-                
-                console.log('Pending calculation', {
-                    id: app.id,
-                    status,
-                    isPaid,
-                    totalValue,
-                    receivedValue,
-                    pendingValue,
-                    paymentType: app.paymentType?.type,
-                    paymentPercentage: app.paymentType?.percentage
-                });
-                
-                // Garantir que o valor pendente não seja negativo
-                return sum + Math.max(0, pendingValue);
-            }, 0);
-            
-            // Calcular total de valores (recebido + pendente)
-            const totalValue = received + pending;
+            const totals = await appointmentService.getTotals();
             
             setTotalStats({
-                received,
-                pending,
-                total: totalCount,
-                totalValue
+                received: totals.received,
+                pending: totals.pending,
+                total: totals.total,
+                totalValue: totals.totalValue
             });
             
-            console.log('Total stats loaded', {
-                received,
-                pending,
-                total: totalCount,
-                totalValue: received + pending,
-                appointmentsLoaded: allAppointments.length,
-                statusCounts
-            });
-            
-            logger.debug('Total stats loaded', {
-                received,
-                pending,
-                total: totalCount,
-                totalValue: received + pending,
-                appointmentsLoaded: allAppointments.length,
-                statusCounts
+            logger.debug('Total stats loaded via RPC', {
+                ...totals
             });
         } catch (error) {
             logger.error(error, { context: 'loadTotalStats' });

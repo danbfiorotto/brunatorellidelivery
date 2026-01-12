@@ -1,4 +1,4 @@
-import { IAppointmentRepository } from '../../infrastructure/repositories/interfaces/IAppointmentRepository';
+import { IAppointmentRepository, AppointmentTotals } from '../../infrastructure/repositories/interfaces/IAppointmentRepository';
 import { IErrorHandler } from '../../infrastructure/errorHandling/IErrorHandler';
 import { Appointment } from '../../domain/entities/Appointment';
 import { IAppointmentService } from './interfaces/IAppointmentService';
@@ -230,6 +230,19 @@ export class AppointmentService implements IAppointmentService {
             await this.deleteAppointmentUseCase.execute({ id });
         } catch (error) {
             throw this.errorHandler.handle(error, { context: 'AppointmentService.delete', id });
+        }
+    }
+
+    /**
+     * Obtém totais de appointments calculados no servidor
+     * Evita buscar milhares de registros para o cliente
+     * ✅ Usa RPC no PostgreSQL para cálculo eficiente
+     */
+    async getTotals(): Promise<AppointmentTotals> {
+        try {
+            return await this.repository.getTotals();
+        } catch (error) {
+            throw this.errorHandler.handle(error, { context: 'AppointmentService.getTotals' });
         }
     }
 }

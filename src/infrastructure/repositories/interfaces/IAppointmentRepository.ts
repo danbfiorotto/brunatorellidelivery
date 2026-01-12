@@ -1,4 +1,19 @@
-import { Appointment } from '../../domain/entities/Appointment';
+import { Appointment } from '../../../domain/entities/Appointment';
+
+/**
+ * Interface para totais de appointments calculados no servidor
+ */
+export interface AppointmentTotals {
+    total: number;
+    received: number;
+    pending: number;
+    totalValue: number;
+    byStatus: {
+        scheduled: number;
+        pending: number;
+        paid: number;
+    };
+}
 
 /**
  * Interface para AppointmentRepository
@@ -34,6 +49,12 @@ export interface IAppointmentRepository {
      * Busca agendamentos por intervalo de datas
      */
     findByDateRange(startDate: string, endDate: string): Promise<Appointment[]>;
+
+    /**
+     * Obtém totais de appointments calculados no servidor
+     * Retorna total, valores recebidos, valores pendentes e contagem por status
+     */
+    getTotals(): Promise<AppointmentTotals>;
 
     /**
      * Cria um novo agendamento

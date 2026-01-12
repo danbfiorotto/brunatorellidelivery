@@ -198,6 +198,7 @@ export class BaseRepository {
     /**
      * Busca todos os registros com paginação opcional
      * @returns Sempre retorna PaginationResult, mesmo quando não há paginação
+     * ✅ Otimizado: usa count em uma única query quando há paginação
      */
     async findAll<T = unknown>(
         options: FindAllOptions = {}, 
@@ -215,6 +216,9 @@ export class BaseRepository {
         // Se não especificar paginação, usar valores padrão (limite alto para "sem paginação")
         const currentPage = page || 1;
         const currentPageSize = pageSize || limit || 1000; // Limite alto para "sem paginação"
+        
+        // Determinar se deve usar contagem em uma única query (otimização)
+        const useSingleQueryCount = !!(page && pageSize);
         
         // ✅ Obter sessão do usuário atual para filtrar por user_id (fora do async para evitar problemas de escopo)
         let finalFilters: Record<string, unknown> = { ...filters };
@@ -235,9 +239,59 @@ export class BaseRepository {
                     }
                 }
                 
-                // Contar total
+                // ✅ Otimização: usar count em uma única query quando há paginação
+                if (useSingleQueryCount) {
+                    // Construir query com count embutido
+                    let query = this.query().select('*', { count: 'exact' });
+                    
+                    // Aplicar filtros
+                    query = this.applyFilters(query, finalFilters);
+                    
+                    // Ordenação
+                    if (orderBy) {
+                        query = query.orderBy(orderBy, orderDirection);
+                    }
+                    
+                    // Paginação
+                    query = query.paginate(currentPage, currentPageSize);
+                    
+                    logger.debug('BaseRepository.findAll - Executing optimized query with count', { 
+                        table: this.tableName, 
+                        page: currentPage, 
+                        pageSize: currentPageSize,
+                        orderBy,
+                        orderDirection,
+                        filters: finalFilters,
+                        userId
+                    });
+                    
+                    // Executar query única que retorna data + count
+                    const { data, count } = await query.executeWithCount<T>();
+                    const total = count || 0;
+                    
+                    logger.debug('BaseRepository.findAll - Optimized query result', { 
+                        table: this.tableName, 
+                        dataLength: data?.length || 0,
+                        total,
+                        firstItem: data?.[0] 
+                    });
+                    
+                    return {
+                        data: data || [],
+                        pagination: {
+                            page: currentPage,
+                            pageSize: currentPageSize,
+                            total,
+                            totalPages: Math.ceil(total / currentPageSize),
+                            hasNext: currentPage * currentPageSize < total,
+                            hasPrev: currentPage > 1
+                        }
+                    };
+                }
+                
+                // Fallback: duas queries separadas (para casos sem paginação)
                 const total = await this.getCount(finalFilters);
-                logger.debug('BaseRepository.findAll - Count result', { table: this.tableName, total, filters: finalFilters, userId });
+                logger.debug('BaseRepository.findAll - Count result (fallback)', { table: this.tableName, total, filters: finalFilters, userId });
                 
                 // Construir query
                 let query = this.query().select('*');
@@ -251,16 +305,14 @@ export class BaseRepository {
                 }
                 
                 // Paginação
-                if (page && pageSize) {
-                    query = query.paginate(currentPage, currentPageSize);
-                } else if (limit) {
+                if (limit) {
                     query = query.limit(limit);
                 } else if (currentPageSize < 1000) {
                     // Se especificou pageSize mas não page, usar limit
                     query = query.limit(currentPageSize);
                 }
                 
-                logger.debug('BaseRepository.findAll - Executing query', { 
+                logger.debug('BaseRepository.findAll - Executing query (fallback)', { 
                     table: this.tableName, 
                     page: currentPage, 
                     pageSize: currentPageSize,
@@ -272,7 +324,7 @@ export class BaseRepository {
                 
                 const data = await query.execute<T[]>();
                 
-                logger.debug('BaseRepository.findAll - Query result', { 
+                logger.debug('BaseRepository.findAll - Query result (fallback)', { 
                     table: this.tableName, 
                     dataLength: data?.length || 0,
                     total,

@@ -1,10 +1,10 @@
 import { BaseRepository } from '../BaseRepository';
-import { IAppointmentRepository } from '../interfaces/IAppointmentRepository';
+import { IAppointmentRepository, AppointmentTotals } from '../interfaces/IAppointmentRepository';
 import { Appointment, AppointmentJSON } from '../../../domain/entities/Appointment';
-import { DatabaseAdapter } from '../../infrastructure/database/DatabaseAdapter';
-import { ICacheService } from '../../infrastructure/cache/ICacheService';
-import { PermissionService } from '../../application/services/PermissionService';
-import { IAuthClient } from '../../infrastructure/auth/IAuthClient';
+import { DatabaseAdapter } from '../../database/DatabaseAdapter';
+import { ICacheService } from '../../cache/ICacheService';
+import { PermissionService } from '../../../application/services/PermissionService';
+import { IAuthClient } from '../../auth/IAuthClient';
 import { logger } from '../../../lib/logger';
 
 /**
@@ -307,6 +307,91 @@ export class AppointmentRepository extends BaseRepository implements IAppointmen
         );
 
         return result.map(item => Appointment.fromJSON(item));
+    }
+
+    /**
+     * Obtém totais de appointments calculados no servidor via RPC
+     * Evita transferir milhares de registros para o cliente
+     */
+    async getTotals(): Promise<AppointmentTotals> {
+        const session = await this.authClient.getSession();
+        const userId = session?.user?.id;
+        
+        if (!userId) {
+            logger.warn('AppointmentRepository.getTotals - No user session');
+            return {
+                total: 0,
+                received: 0,
+                pending: 0,
+                totalValue: 0,
+                byStatus: { scheduled: 0, pending: 0, paid: 0 }
+            };
+        }
+        
+        try {
+            const result = await this.db.rpc('get_appointment_totals', { p_user_id: userId });
+            
+            if (!result) {
+                logger.warn('AppointmentRepository.getTotals - RPC returned null, using fallback');
+                return this.calculateTotalsFallback();
+            }
+            
+            const totals = result as AppointmentTotals;
+            
+            logger.debug('AppointmentRepository.getTotals - Success', { totals });
+            
+            return {
+                total: totals.total || 0,
+                received: Number(totals.received) || 0,
+                pending: Number(totals.pending) || 0,
+                totalValue: Number(totals.totalValue) || 0,
+                byStatus: totals.byStatus || { scheduled: 0, pending: 0, paid: 0 }
+            };
+        } catch (error) {
+            logger.error(error, { context: 'AppointmentRepository.getTotals - RPC failed' });
+            return this.calculateTotalsFallback();
+        }
+    }
+    
+    /**
+     * Fallback para calcular totais quando RPC não está disponível
+     * Usado durante migração ou se função SQL não existir
+     */
+    private async calculateTotalsFallback(): Promise<AppointmentTotals> {
+        logger.debug('AppointmentRepository.getTotals - Using fallback calculation');
+        
+        const result = await this.findAll({ limit: 10000 });
+        const appointments = 'data' in result ? result.data : result;
+        
+        let received = 0;
+        let pending = 0;
+        let scheduled = 0;
+        let paidCount = 0;
+        let pendingCount = 0;
+        
+        for (const app of appointments) {
+            const status = app.status?.toString() || 'scheduled';
+            const value = app.value?.amount || 0;
+            
+            if (status === 'paid') {
+                received += app.calculateReceivedValue?.()?.amount || value;
+                paidCount++;
+            } else if (status === 'pending') {
+                pending += value;
+                pendingCount++;
+            } else {
+                pending += value;
+                scheduled++;
+            }
+        }
+        
+        return {
+            total: appointments.length,
+            received,
+            pending,
+            totalValue: received + pending,
+            byStatus: { scheduled, pending: pendingCount, paid: paidCount }
+        };
     }
 
     /**

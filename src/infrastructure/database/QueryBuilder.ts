@@ -16,12 +16,29 @@ type WhereValue = {
 type QueryOperator = 'eq' | 'neq' | 'gt' | 'gte' | 'lt' | 'lte' | 'like' | 'ilike' | 'in' | 'is';
 
 /**
+ * Options for select query with count support
+ */
+interface SelectOptions {
+    count?: 'exact' | 'planned' | 'estimated';
+    head?: boolean;
+}
+
+/**
+ * Result with data and optional count
+ */
+export interface QueryResultWithCount<T> {
+    data: T[];
+    count: number | null;
+}
+
+/**
  * Builder para construir queries de forma fluente
  */
 export class QueryBuilder {
     private client: SupabaseClient;
     private tableName: string;
     private query: ReturnType<SupabaseClient['from']>;
+    private countMode: 'exact' | 'planned' | 'estimated' | null = null;
 
     /**
      * Cria uma instância do QueryBuilder
@@ -34,10 +51,14 @@ export class QueryBuilder {
 
     /**
      * Seleciona campos específicos
+     * @param fields - Campos a selecionar
+     * @param options - Opções de select (count, head)
      */
-    select(fields: string | string[] = '*'): this {
-        // Se fields for string e contiver parênteses, é um relacionamento
-        if (typeof fields === 'string' && fields.includes('(')) {
+    select(fields: string | string[] = '*', options?: SelectOptions): this {
+        if (options?.count) {
+            this.countMode = options.count;
+            this.query = this.query.select(fields, { count: options.count, head: options.head });
+        } else if (typeof fields === 'string' && fields.includes('(')) {
             this.query = this.query.select(fields);
         } else {
             this.query = this.query.select(fields);
@@ -232,6 +253,27 @@ export class QueryBuilder {
         }
         
         return data as T;
+    }
+
+    /**
+     * Executa a query e retorna dados com count em uma única requisição
+     * Otimiza performance eliminando chamada separada de count
+     * Requer que select() tenha sido chamado com { count: 'exact' }
+     */
+    async executeWithCount<T = unknown>(): Promise<QueryResultWithCount<T>> {
+        const { data, count, error } = await this.query;
+        
+        if (error) {
+            throw new DatabaseError(
+                `Erro ao executar query na tabela ${this.tableName}: ${error.message}`,
+                error
+            );
+        }
+        
+        return {
+            data: (data || []) as T[],
+            count: count
+        };
     }
 
     /**
