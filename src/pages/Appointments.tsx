@@ -956,36 +956,6 @@ const Appointments: React.FC = () => {
         await performSubmit();
     };
 
-    // Handler para onClick do botão (fallback para mobile)
-    const handleButtonClick = async (e: React.MouseEvent<HTMLButtonElement> | React.TouchEvent<HTMLButtonElement>): Promise<void> => {
-        e.preventDefault();
-        e.stopPropagation();
-        logger.debug('Button click/touch event triggered', { 
-            isSubmitting,
-            formValid: formRef.current?.checkValidity() 
-        });
-        
-        // Não fazer nada se já estiver submetendo
-        if (isSubmitting) {
-            logger.debug('Already submitting, ignoring click');
-            return;
-        }
-        
-        // Verificar validação HTML5 antes de submeter
-        if (formRef.current) {
-            const form = formRef.current;
-            if (!form.checkValidity()) {
-                logger.debug('Form validation failed, showing native validation');
-                // Usar requestAnimationFrame para garantir que o reportValidity funcione no mobile
-                requestAnimationFrame(() => {
-                    form.reportValidity();
-                });
-                return;
-            }
-        }
-        
-        await performSubmit();
-    };
 
     const handlePatientNameChange = (value: string): void => {
         setFormData({ ...formData, patient_name: value });
@@ -2022,22 +1992,22 @@ const Appointments: React.FC = () => {
                             {t('appointments.cancel')}
                         </Button>
                         <Button 
-                            type="submit" 
+                            type="button"
                             disabled={isSubmitting}
                             onClick={(e) => {
-                                logger.debug('Button onClick triggered');
-                                handleButtonClick(e);
-                            }}
-                            onTouchStart={(e) => {
-                                // Prevenir comportamento padrão do touch
-                                logger.debug('Button onTouchStart triggered');
-                            }}
-                            onTouchEnd={(e) => {
-                                // Garantir que eventos touch funcionem no mobile
-                                logger.debug('Button onTouchEnd triggered');
                                 e.preventDefault();
                                 e.stopPropagation();
-                                handleButtonClick(e);
+                                
+                                // Verifica validação HTML5 antes de submeter
+                                if (formRef.current && !formRef.current.checkValidity()) {
+                                    requestAnimationFrame(() => {
+                                        formRef.current!.reportValidity();
+                                    });
+                                    return;
+                                }
+                                
+                                // Chama performSubmit diretamente
+                                performSubmit();
                             }}
                         >
                             {isSubmitting 
