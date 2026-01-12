@@ -24,6 +24,7 @@ const Button: React.FC<ButtonProps> = ({ children, variant = 'primary', classNam
                 "px-4 sm:px-6 py-2.5 sm:py-3 rounded-xl font-semibold transition-all duration-200 flex items-center justify-center gap-2",
                 "min-h-[44px] min-w-[44px] text-sm sm:text-base",
                 "disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100",
+                "touch-manipulation", // Melhorar responsividade touch no mobile
                 variants[variant],
                 className
             )}

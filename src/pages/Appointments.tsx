@@ -162,6 +162,7 @@ const Appointments: React.FC = () => {
     const [editingAppointment, setEditingAppointment] = useState<Appointment | null>(null);
     const [uploadingFiles, setUploadingFiles] = useState<boolean>(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const formRef = useRef<HTMLFormElement>(null);
     const [patientSuggestions, setPatientSuggestions] = useState<Patient[]>([]);
     const [showSuggestions, setShowSuggestions] = useState<boolean>(false);
     const patientInputRef = useRef<HTMLInputElement>(null);
@@ -680,13 +681,15 @@ const Appointments: React.FC = () => {
 
     const handleSubmit = async (e: FormEvent<HTMLFormElement>): Promise<void> => {
         e.preventDefault();
-        e.stopPropagation();
+        // Removido e.stopPropagation() - pode causar problemas no mobile
         
         // Prevenir múltiplos submits
         if (isSubmitting) {
+            logger.debug('Submit blocked: already submitting');
             return;
         }
         
+        logger.debug('Starting submit process');
         setIsSubmitting(true);
         
         try {
@@ -865,8 +868,15 @@ const Appointments: React.FC = () => {
             loadTotalStats();
         } catch (error) {
             logger.error(error, { context: 'saveAppointment' });
-            handleError(error, 'Appointments.saveAppointment');
+            try {
+                handleError(error, 'Appointments.saveAppointment');
+            } catch (handleErrorException) {
+                // Se handleError lançar uma exceção, logar mas não falhar
+                logger.error(handleErrorException, { context: 'handleError in saveAppointment' });
+            }
         } finally {
+            // Sempre garantir que o estado seja resetado, mesmo em caso de erro
+            logger.debug('Resetting isSubmitting state');
             setIsSubmitting(false);
         }
     };
@@ -1308,7 +1318,7 @@ const Appointments: React.FC = () => {
                 title={editingAppointment ? t('appointments.editAppointment') : t('appointments.newAppointment')}
                 size="xl"
             >
-                <form onSubmit={handleSubmit} className="space-y-4">
+                <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                             <label className="block text-sm font-semibold text-slate-700 dark:text-gray-300 mb-2">{t('appointments.clinicRequired')}</label>
@@ -1894,7 +1904,10 @@ const Appointments: React.FC = () => {
                         >
                             {t('appointments.cancel')}
                         </Button>
-                        <Button type="submit" disabled={isSubmitting}>
+                        <Button 
+                            type="submit" 
+                            disabled={isSubmitting}
+                        >
                             {isSubmitting 
                                 ? t('common.saving') || 'Salvando...' 
                                 : editingAppointment 

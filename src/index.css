@@ -80,6 +80,7 @@
   button, a, [role="button"] {
     min-height: 44px;
     min-width: 44px;
+    touch-action: manipulation; /* Melhorar responsividade touch no mobile */
   }
   
   /* Improve text readability on small screens */
@@ -135,6 +136,12 @@ input[type="time"] {
   /* Improve form inputs on mobile */
   input, textarea, select {
     font-size: 16px; /* Prevents zoom on iOS */
+    touch-action: manipulation; /* Melhorar responsividade touch no mobile */
+  }
+  
+  /* Melhorar responsividade de formulários no mobile */
+  form {
+    touch-action: manipulation;
   }
   
   /* Better spacing for mobile cards */
