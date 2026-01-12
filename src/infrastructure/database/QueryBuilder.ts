@@ -192,9 +192,19 @@ export class QueryBuilder {
 
     /**
      * Retorna apenas um resultado (single)
+     * Lança erro se não encontrar ou encontrar múltiplos
      */
     single(): this {
         this.query = this.query.single();
+        return this;
+    }
+
+    /**
+     * Retorna apenas um resultado ou null se não encontrar (maybeSingle)
+     * Não lança erro se não encontrar, apenas retorna null
+     */
+    maybeSingle(): this {
+        this.query = this.query.maybeSingle();
         return this;
     }
 

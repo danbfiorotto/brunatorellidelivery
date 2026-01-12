@@ -210,23 +210,17 @@ export class PatientRepository extends BaseRepository implements IPatientReposit
                 
                 if (email) {
                     // Buscar por nome OU email usando operador OR
+                    // Usar busca exata para melhor performance
                     query = query.or(`name.eq.${name},email.eq.${email}`);
                 } else {
-                    // Buscar apenas por nome
+                    // Buscar apenas por nome - usar busca exata (case-sensitive)
+                    // O Supabase PostgREST precisa que o nome seja exato
                     query = query.where('name', name);
                 }
                 
-                try {
-                    const data = await query.single().execute<PatientJSON>();
-                    return data || null;
-                } catch (error) {
-                    const errorObj = error as { code?: string; message?: string };
-                    // PGRST116 = not found (Supabase)
-                    if (errorObj.code === 'PGRST116' || errorObj.message?.includes('not found')) {
-                        return null;
-                    }
-                    throw error;
-                }
+                // Usar maybeSingle() que retorna null se não encontrar ao invés de lançar erro
+                const data = await query.maybeSingle().execute<PatientJSON | null>();
+                return data;
             },
             { operation: 'findByNameOrEmail', metadata: { name, email } },
             { defaultValue: null }
