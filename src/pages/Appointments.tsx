@@ -743,21 +743,22 @@ const Appointments: React.FC = () => {
             const valueToSave = formData.value ? parseFloat(unformatCurrency(formData.value.toString())) : 0;
             
             // Mapear para CreateAppointmentDTO
+            // Converter string vazia para null/undefined para compatibilidade com schema Zod
             const dataToSave: CreateAppointmentDTO = {
-                clinicId: formData.clinic_id || undefined,
+                clinicId: formData.clinic_id && formData.clinic_id.trim() ? formData.clinic_id : null,
                 date: formData.date,
                 time: formData.time,
-                patientName: formData.patient_name || undefined,
-                patientPhone: formData.patient_phone ? unformatPhoneNumber(formData.patient_phone) : undefined,
-                patientEmail: formData.patient_email || undefined,
-                patientId: formData.patient_id || undefined,
+                patientName: formData.patient_name && formData.patient_name.trim() ? formData.patient_name.trim() : undefined,
+                patientPhone: formData.patient_phone && formData.patient_phone.trim() ? unformatPhoneNumber(formData.patient_phone) : undefined,
+                patientEmail: formData.patient_email && formData.patient_email.trim() ? formData.patient_email.trim() : undefined,
+                patientId: formData.patient_id && formData.patient_id.trim() ? formData.patient_id : undefined,
                 procedure: finalProcedure,
                 value: isNaN(valueToSave) ? 0 : valueToSave,
                 currency: formData.currency || 'BRL',
                 paymentType: formData.payment_type || '100',
-                paymentPercentage: formData.payment_percentage ? parseFloat(formData.payment_percentage) : null,
+                paymentPercentage: formData.payment_percentage && formData.payment_percentage.trim() ? parseFloat(formData.payment_percentage) : null,
                 isPaid: formData.is_paid || false,
-                paymentDate: formData.is_paid && formData.payment_date ? formData.payment_date : null,
+                paymentDate: formData.is_paid && formData.payment_date && formData.payment_date.trim() ? formData.payment_date : null,
                 clinicalEvolution: formData.clinical_evolution && formData.clinical_evolution.trim() ? formData.clinical_evolution.trim() : null,
                 notes: formData.notes && formData.notes.trim() ? formData.notes.trim() : null
             };

@@ -10,6 +10,10 @@ import { z } from 'zod';
 export class CreateAppointmentInputValidator implements IInputValidator<CreateAppointmentInput> {
     async validate(data: unknown): Promise<CreateAppointmentInput> {
         try {
+            // Extrair allowPastDates antes da validação do schema (não está no schema)
+            const inputData = data as CreateAppointmentInput;
+            const allowPastDates = inputData?.allowPastDates ?? false;
+            
             const validated = CreateAppointmentSchema.parse(data);
             return {
                 patientId: validated.patientId,
@@ -28,13 +32,19 @@ export class CreateAppointmentInputValidator implements IInputValidator<CreateAp
                 paymentDate: validated.paymentDate ?? null,
                 clinicalEvolution: validated.clinicalEvolution ?? null,
                 notes: validated.notes ?? null,
-                allowPastDates: false // Default
+                allowPastDates // Preservar o valor passado
             };
         } catch (error) {
             if (error instanceof z.ZodError) {
+                // Melhorar mensagem de erro com detalhes do Zod
+                const errorMessages = error.errors.map(err => {
+                    const path = err.path.join('.');
+                    return `${path}: ${err.message}`;
+                }).join('; ');
+                
                 throw new ValidationError(
                     error.errors,
-                    'Dados inválidos para criação de agendamento'
+                    `Dados inválidos para criação de agendamento: ${errorMessages}`
                 );
             }
             throw error;

@@ -45,7 +45,7 @@ export const logAction = async (
         // Verificar se navigator está disponível (não está em SSR/build)
         const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : null;
         
-        await supabase.from('audit_logs').insert({
+        const { error } = await supabase.from('audit_logs').insert({
             user_id: session.user.id,
             action,
             resource_type: resourceType,
@@ -55,6 +55,11 @@ export const logAction = async (
             ip_address: await getClientIP(),
             user_agent: userAgent
         });
+        
+        // Se houver erro, apenas logar mas não falhar
+        if (error) {
+            logger.warn('Failed to log audit action', { error, action, resourceType, resourceId });
+        }
     } catch (error) {
         // Não falhar se logging falhar
         logger.error(error, { context: 'logAction' });
