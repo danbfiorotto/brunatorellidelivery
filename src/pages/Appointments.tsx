@@ -22,6 +22,8 @@ import { validateImageUpload } from '../lib/fileValidation';
 import { validateAppointment } from '../lib/validators';
 import { isValidImageUrl, sanitizeText } from '../lib/sanitize';
 import { logger } from '../lib/logger';
+import { IAuthClient } from '../infrastructure/auth/IAuthClient';
+import { AuthenticationError } from '../domain/errors/AppError';
 
 interface Patient {
     id: string;
@@ -349,6 +351,32 @@ const Appointments: React.FC = () => {
             }
         }
     }, [isSubmitting]);
+
+    // Listener para quando o app volta do background - renovar sessão se necessário
+    useEffect(() => {
+        const handleVisibilityChange = async () => {
+            if (document.visibilityState === 'visible') {
+                // App voltou ao foreground, renovar sessão se necessário
+                try {
+                    const authClient = container.resolve<IAuthClient>('authClient');
+                    const refreshedSession = await authClient.refreshSession();
+                    if (refreshedSession) {
+                        logger.debug('Session refreshed after app visibility change');
+                    } else {
+                        logger.debug('No session to refresh after visibility change');
+                    }
+                } catch (error) {
+                    logger.warn('Failed to refresh session after visibility change', { error });
+                }
+            }
+        };
+
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        
+        return () => {
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+        };
+    }, [container]);
 
     useEffect(() => {
         const abortController = new AbortController();
@@ -832,19 +860,60 @@ const Appointments: React.FC = () => {
             let patientId: string | null;
             const isEditing = !!editingAppointment;
             
-            if (isEditing) {
-                logger.debug('Updating appointment', { appointmentId: editingAppointment!.id });
-                const updated = await appointmentService.update(editingAppointment!.id, dataToSave);
-                logger.debug('Appointment updated successfully', { appointmentId: updated.id });
-                appointmentId = updated.id;
-                patientId = updated.patientId;
-            } else {
-                logger.debug('Creating new appointment');
-                // Permitir datas passadas pois atendimentos são preenchidos após o procedimento
-                const created = await appointmentService.create(dataToSave, true);
-                logger.debug('Appointment created successfully', { appointmentId: created.id });
-                appointmentId = created.id;
-                patientId = created.patientId;
+            // Função auxiliar para tentar criar/atualizar com retry em caso de erro de autenticação
+            const attemptSave = async (): Promise<{ appointmentId: string; patientId: string | null }> => {
+                if (isEditing) {
+                    logger.debug('Updating appointment', { appointmentId: editingAppointment!.id });
+                    const updated = await appointmentService.update(editingAppointment!.id, dataToSave);
+                    logger.debug('Appointment updated successfully', { appointmentId: updated.id });
+                    return { appointmentId: updated.id, patientId: updated.patientId };
+                } else {
+                    logger.debug('Creating new appointment');
+                    // Permitir datas passadas pois atendimentos são preenchidos após o procedimento
+                    const created = await appointmentService.create(dataToSave, true);
+                    logger.debug('Appointment created successfully', { appointmentId: created.id });
+                    return { appointmentId: created.id, patientId: created.patientId };
+                }
+            };
+
+            try {
+                const result = await attemptSave();
+                appointmentId = result.appointmentId;
+                patientId = result.patientId;
+            } catch (saveError) {
+                // Verificar se é erro de autenticação
+                const errorMessage = saveError instanceof Error ? saveError.message : String(saveError);
+                const isAuthError = saveError instanceof AuthenticationError || 
+                    errorMessage.includes('não autenticado') || 
+                    errorMessage.includes('authentication') ||
+                    errorMessage.includes('Unauthorized') ||
+                    errorMessage.includes('401');
+                
+                if (isAuthError) {
+                    logger.warn('Authentication error detected, attempting to refresh session', { error: saveError });
+                    
+                    try {
+                        // Tentar renovar sessão
+                        const authClient = container.resolve<IAuthClient>('authClient');
+                        const refreshedSession = await authClient.refreshSession();
+                        
+                        if (refreshedSession) {
+                            logger.debug('Session refreshed successfully, retrying save operation');
+                            // Tentar novamente após renovar sessão
+                            const result = await attemptSave();
+                            appointmentId = result.appointmentId;
+                            patientId = result.patientId;
+                        } else {
+                            throw new Error('Não foi possível renovar a sessão. Por favor, faça login novamente.');
+                        }
+                    } catch (refreshError) {
+                        logger.error(refreshError, { context: 'sessionRefresh' });
+                        throw new Error('Sua sessão expirou. Por favor, faça login novamente.');
+                    }
+                } else {
+                    // Se não for erro de autenticação, propagar o erro normalmente
+                    throw saveError;
+                }
             }
             
             // Save radiographs if any were uploaded
@@ -899,6 +968,7 @@ const Appointments: React.FC = () => {
                 patient_email: '',
                 patient_id: '',
                 procedure: '',
+                custom_procedure: '',
                 value: '',
                 currency: currency,
                 payment_type: '100',
