@@ -50,15 +50,8 @@ export class QueryBuilder {
      * ✅ Refatorado usando Strategy Pattern para melhor manutenibilidade
      */
     where(field: string, value: WhereValue): this {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/60129495-f832-4b9c-89b3-ac58f147e9d1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'QueryBuilder.ts:52',message:'where: entry',data:{tableName:this.tableName,field,valueType:typeof value,isObject:value && typeof value === 'object',hasQuery:!!this.query,queryType:typeof this.query,hasEq:typeof this.query?.eq === 'function'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-        // #endregion
-        
         // ✅ Garantir que this.query está inicializado corretamente
         if (!this.query) {
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/60129495-f832-4b9c-89b3-ac58f147e9d1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'QueryBuilder.ts:58',message:'where: reinitializing query',data:{tableName:this.tableName},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-            // #endregion
             this.query = this.client.from(this.tableName);
         }
         
@@ -90,15 +83,7 @@ export class QueryBuilder {
                     valueObj.in ?? 
                     value;
                 
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/60129495-f832-4b9c-89b3-ac58f147e9d1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'QueryBuilder.ts:85',message:'where: before strategy apply',data:{strategyName:strategy.constructor.name,field,strategyValue,hasQuery:!!this.query,hasEq:typeof this.query?.eq === 'function'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-                // #endregion
-                
                 this.query = strategy.apply(this.query, field, strategyValue);
-                
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/60129495-f832-4b9c-89b3-ac58f147e9d1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'QueryBuilder.ts:90',message:'where: after strategy apply',data:{hasQuery:!!this.query,hasEq:typeof this.query?.eq === 'function'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-                // #endregion
             } else {
                 // Fallback para igualdade se nenhuma estratégia encontrada
                 const eqStrategy = new EqStrategy();
@@ -117,36 +102,19 @@ export class QueryBuilder {
      * Suporta encadeamento para múltiplos filtros
      */
     whereOperator(field: string, operator: QueryOperator, value: unknown): this {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/60129495-f832-4b9c-89b3-ac58f147e9d1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'QueryBuilder.ts:119',message:'whereOperator: entry',data:{field,operator,hasQuery:!!this.query,queryType:typeof this.query,hasEq:typeof (this.query as any)?.eq === 'function',hasUpdate:typeof (this.query as any)?.update === 'function',queryKeys:this.query ? Object.keys(this.query) : [],queryMethods:this.query ? Object.getOwnPropertyNames(Object.getPrototypeOf(this.query)) : []},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'D'})}).catch(()=>{});
-        // #endregion
-        
         // ✅ Garantir que this.query está no estado correto antes de aplicar operadores
         // Se a query não tiver os métodos necessários, reinicializar
         if (!this.query || typeof (this.query as any).eq !== 'function') {
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/60129495-f832-4b9c-89b3-ac58f147e9d1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'QueryBuilder.ts:123',message:'whereOperator: reinitializing query',data:{tableName:this.tableName},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'D'})}).catch(()=>{});
-            // #endregion
             this.query = this.client.from(this.tableName);
         }
         
         try {
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/60129495-f832-4b9c-89b3-ac58f147e9d1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'QueryBuilder.ts:134',message:'whereOperator: before operator call',data:{operator,hasQuery:!!this.query,hasEq:typeof (this.query as any)?.eq === 'function',queryType:typeof this.query,queryConstructor:this.query?.constructor?.name},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'D'})}).catch(()=>{});
-            // #endregion
-            
             // ✅ Verificar novamente antes de usar (pode ter mudado entre a verificação anterior e aqui)
             if (!this.query || typeof (this.query as any).eq !== 'function') {
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/60129495-f832-4b9c-89b3-ac58f147e9d1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'QueryBuilder.ts:138',message:'whereOperator: query invalid, reinitializing before operator call',data:{tableName:this.tableName},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'D'})}).catch(()=>{});
-                // #endregion
                 this.query = this.client.from(this.tableName);
             }
             
             if (operator === 'eq') {
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/60129495-f832-4b9c-89b3-ac58f147e9d1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'QueryBuilder.ts:143',message:'whereOperator: calling eq',data:{field,value,hasQuery:!!this.query,hasEq:typeof (this.query as any)?.eq === 'function'},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'D'})}).catch(()=>{});
-                // #endregion
                 this.query = this.query.eq(field, value);
             } else if (operator === 'neq') {
                 this.query = this.query.neq(field, value);
@@ -169,14 +137,7 @@ export class QueryBuilder {
             } else {
                 throw new Error(`Operador não suportado: ${operator}`);
             }
-            
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/60129495-f832-4b9c-89b3-ac58f147e9d1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'QueryBuilder.ts:150',message:'whereOperator: after operator call',data:{hasQuery:!!this.query,hasUpdate:typeof (this.query as any)?.update === 'function',hasSelect:typeof (this.query as any)?.select === 'function'},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'D'})}).catch(()=>{});
-            // #endregion
         } catch (error) {
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/60129495-f832-4b9c-89b3-ac58f147e9d1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'QueryBuilder.ts:152',message:'whereOperator: error caught',data:{errorMessage:(error as Error)?.message,operator},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'D'})}).catch(()=>{});
-            // #endregion
             // Se houver erro, tentar reinicializar a query e tentar novamente
             this.query = this.client.from(this.tableName);
             if (operator === 'eq') {
@@ -294,28 +255,18 @@ export class QueryBuilder {
      * ✅ Preserva filtros WHERE aplicados anteriormente
      */
     async update<T = unknown>(data: unknown): Promise<T> {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/60129495-f832-4b9c-89b3-ac58f147e9d1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'QueryBuilder.ts:285',message:'update: entry',data:{tableName:this.tableName,hasQuery:!!this.query,queryType:typeof this.query,hasUpdate:typeof (this.query as any)?.update === 'function',hasSelect:typeof (this.query as any)?.select === 'function',queryMethods:this.query ? Object.getOwnPropertyNames(Object.getPrototypeOf(this.query)) : []},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'E'})}).catch(()=>{});
-        // #endregion
-        
         // ✅ IMPORTANTE: Quando whereOperator é chamado, ele modifica this.query
         // O Supabase retorna uma nova query builder após cada operação WHERE
         // Essa nova query builder DEVE ter o método update() disponível
         // Se não tiver, significa que a query está em um estado inválido
         
         if (!this.query) {
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/60129495-f832-4b9c-89b3-ac58f147e9d1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'QueryBuilder.ts:293',message:'update: query is null, reinitializing',data:{tableName:this.tableName},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'E'})}).catch(()=>{});
-            // #endregion
             this.query = this.client.from(this.tableName);
         }
         
         // Verificar se a query tem o método update
         // Se whereOperator foi chamado, a query deve ter update disponível
         if (typeof (this.query as any).update !== 'function') {
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/60129495-f832-4b9c-89b3-ac58f147e9d1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'QueryBuilder.ts:299',message:'update: query does not have update method',data:{hasQuery:!!this.query,queryType:typeof this.query,queryConstructor:this.query?.constructor?.name},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'E'})}).catch(()=>{});
-            // #endregion
             // Se não tem update, a query pode estar em um estado inválido
             // Tentar reconstruir a query (mas perdemos os filtros WHERE)
             // Isso indica um problema na forma como estamos encadeando as operações
@@ -327,15 +278,7 @@ export class QueryBuilder {
             );
         }
         
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/60129495-f832-4b9c-89b3-ac58f147e9d1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'QueryBuilder.ts:310',message:'update: calling query.update',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'E'})}).catch(()=>{});
-        // #endregion
-        
         const { data: result, error } = await this.query.update(data).select();
-        
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/60129495-f832-4b9c-89b3-ac58f147e9d1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'QueryBuilder.ts:313',message:'update: result',data:{hasError:!!error,errorMessage:error?.message,hasResult:!!result},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'E'})}).catch(()=>{});
-        // #endregion
         
         if (error) {
             throw new DatabaseError(

@@ -106,24 +106,11 @@ export class EqStrategy implements IWhereStrategy {
         field: string,
         value: unknown
     ): ReturnType<SupabaseClient['from']> {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/60129495-f832-4b9c-89b3-ac58f147e9d1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'WhereStrategy.ts:109',message:'EqStrategy.apply: entry',data:{hasQuery:!!query,queryType:typeof query,hasEq:typeof query?.eq === 'function',field,valueType:typeof value},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-        // #endregion
-        
         if (!query || typeof query.eq !== 'function') {
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/60129495-f832-4b9c-89b3-ac58f147e9d1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'WhereStrategy.ts:115',message:'EqStrategy.apply: invalid query',data:{hasQuery:!!query,queryKeys:query ? Object.keys(query) : [],queryMethods:query ? Object.getOwnPropertyNames(Object.getPrototypeOf(query)) : []},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-            // #endregion
             throw new Error(`Invalid query object: query.eq is not a function. Query type: ${typeof query}, has query: ${!!query}`);
         }
         
-        const result = query.eq(field, value);
-        
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/60129495-f832-4b9c-89b3-ac58f147e9d1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'WhereStrategy.ts:123',message:'EqStrategy.apply: success',data:{hasResult:!!result,resultType:typeof result},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-        // #endregion
-        
-        return result;
+        return query.eq(field, value);
     }
 }
 

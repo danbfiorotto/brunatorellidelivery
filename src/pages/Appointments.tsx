@@ -139,6 +139,7 @@ const Appointments: React.FC = () => {
     const [patients, setPatients] = useState<Patient[]>([]);
     const [procedures, setProcedures] = useState<Procedure[]>([]);
     const [loading, setLoading] = useState<boolean>(true);
+    const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
     const [totalStats, setTotalStats] = useState<{ received: number; pending: number; total: number; totalValue: number }>({
         received: 0,
         pending: 0,
@@ -679,8 +680,17 @@ const Appointments: React.FC = () => {
 
     const handleSubmit = async (e: FormEvent<HTMLFormElement>): Promise<void> => {
         e.preventDefault();
+        e.stopPropagation();
         
-        // Prepare data for validation
+        // Prevenir múltiplos submits
+        if (isSubmitting) {
+            return;
+        }
+        
+        setIsSubmitting(true);
+        
+        try {
+            // Prepare data for validation
         const dataToValidate = {
             date: formData.date,
             time: formData.time,
@@ -856,6 +866,8 @@ const Appointments: React.FC = () => {
         } catch (error) {
             logger.error(error, { context: 'saveAppointment' });
             handleError(error, 'Appointments.saveAppointment');
+        } finally {
+            setIsSubmitting(false);
         }
     };
 
@@ -1882,8 +1894,13 @@ const Appointments: React.FC = () => {
                         >
                             {t('appointments.cancel')}
                         </Button>
-                        <Button type="submit">
-                            {editingAppointment ? t('appointments.saveChanges') : t('appointments.saveAppointment')}
+                        <Button type="submit" disabled={isSubmitting}>
+                            {isSubmitting 
+                                ? t('common.saving') || 'Salvando...' 
+                                : editingAppointment 
+                                    ? t('appointments.saveChanges') 
+                                    : t('appointments.saveAppointment')
+                            }
                         </Button>
                     </div>
                 </form>
