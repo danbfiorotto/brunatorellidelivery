@@ -211,41 +211,41 @@ const Patients: React.FC = () => {
             animate="show"
             className="space-y-6"
         >
-            <div className="bg-gradient-to-r from-sky-500 to-emerald-500 dark:from-sky-600 dark:to-emerald-600 rounded-2xl p-6 md:p-8 text-white mb-8 shadow-xl">
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+            <div className="bg-gradient-to-r from-sky-500 to-emerald-500 dark:from-sky-600 dark:to-emerald-600 rounded-xl sm:rounded-2xl p-4 sm:p-6 md:p-8 text-white mb-6 sm:mb-8 shadow-xl">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 sm:gap-4 mb-4 sm:mb-6">
                     <div>
-                        <h2 className="text-3xl md:text-4xl font-bold mb-2">{t('patients.title')}</h2>
-                        <p className="text-white/90">{t('patients.subtitle')}</p>
+                        <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold mb-1 sm:mb-2">{t('patients.title')}</h2>
+                        <p className="text-sm sm:text-base text-white/90">{t('patients.subtitle')}</p>
                     </div>
                     <Button 
                         onClick={() => setIsModalOpen(true)}
-                        className="gap-2 bg-white dark:bg-gray-800 text-sky-600 dark:text-sky-400 hover:bg-gray-50 dark:hover:bg-gray-700 shadow-lg"
+                        className="gap-2 bg-white dark:bg-gray-800 text-sky-600 dark:text-sky-400 hover:bg-gray-50 dark:hover:bg-gray-700 shadow-lg w-full sm:w-auto text-sm sm:text-base"
                     >
-                        <User size={20} />
+                        <User size={18} />
                         {t('patients.newPatient')}
                     </Button>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="bg-white/20 backdrop-blur-sm rounded-xl p-4 border border-white/30">
-                        <p className="text-sm font-medium text-white/80 mb-1">{t('patients.totalPatients')}</p>
-                        <p className="text-2xl font-bold text-white">{pagination.total}</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                    <div className="bg-white/20 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-white/30">
+                        <p className="text-xs sm:text-sm font-medium text-white/80 mb-1">{t('patients.totalPatients')}</p>
+                        <p className="text-xl sm:text-2xl font-bold text-white">{pagination.total}</p>
                     </div>
-                    <div className="bg-white/20 backdrop-blur-sm rounded-xl p-4 border border-white/30">
-                        <p className="text-sm font-medium text-white/80 mb-1">{t('patients.totalAppointments')}</p>
-                        <p className="text-2xl font-bold text-white">{totalAppointments}</p>
+                    <div className="bg-white/20 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-white/30">
+                        <p className="text-xs sm:text-sm font-medium text-white/80 mb-1">{t('patients.totalAppointments')}</p>
+                        <p className="text-xl sm:text-2xl font-bold text-white">{totalAppointments}</p>
                     </div>
                 </div>
             </div>
 
             <Card className="p-0 overflow-hidden">
-                <div className="p-4 border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
-                    <div className="relative max-w-md">
+                <div className="p-3 sm:p-4 border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+                    <div className="relative w-full max-w-md">
                         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500" size={18} />
                         <input
                             type="text"
                             placeholder={t('patients.searchPlaceholder')}
-                            className="w-full pl-10 pr-4 py-2 bg-white dark:bg-gray-800 text-slate-900 dark:text-white border border-gray-200 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all"
+                            className="w-full pl-10 pr-4 py-2.5 sm:py-2 bg-white dark:bg-gray-800 text-slate-900 dark:text-white border border-gray-200 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all text-base sm:text-sm min-h-[44px]"
                             value={searchTerm}
                             onChange={(e: ChangeEvent<HTMLInputElement>) => {
                                 const value = e.target.value;
@@ -283,30 +283,38 @@ const Patients: React.FC = () => {
                                 animate={{ opacity: 1 }}
                                 transition={{ duration: 0.15 }}
                                 onClick={() => navigate(`/patients/${patient.id}`)}
-                                className="flex items-center justify-between p-4 hover:bg-gray-50 dark:hover:bg-gray-800/50 cursor-pointer transition-colors group min-h-[80px]"
+                                className="flex items-center justify-between p-3 sm:p-4 hover:bg-gray-50 dark:hover:bg-gray-800/50 cursor-pointer transition-colors group min-h-[70px] sm:min-h-[80px]"
                             >
-                            <div className="flex items-center gap-4">
-                                <div className="w-12 h-12 bg-gradient-to-br from-sky-100 to-emerald-100 dark:from-sky-900/30 dark:to-emerald-900/30 rounded-full flex items-center justify-center text-sky-700 dark:text-sky-300 font-bold text-lg shadow-sm">
+                            <div className="flex items-center gap-3 sm:gap-4 flex-1 min-w-0">
+                                <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-sky-100 to-emerald-100 dark:from-sky-900/30 dark:to-emerald-900/30 rounded-full flex items-center justify-center text-sky-700 dark:text-sky-300 font-bold text-base sm:text-lg shadow-sm flex-shrink-0">
                                     {patient.name?.charAt(0)?.toUpperCase() || 'P'}
                                 </div>
-                                <div className="flex-1">
-                                    <h3 className="font-semibold text-gray-900 dark:text-white group-hover:text-sky-600 dark:group-hover:text-sky-400 transition-colors">{sanitizeText(patient.name) || 'Sem nome'}</h3>
-                                    <div className="flex items-center gap-3 text-sm text-gray-600 dark:text-gray-400 mt-0.5">
+                                <div className="flex-1 min-w-0">
+                                    <h3 className="font-semibold text-sm sm:text-base text-gray-900 dark:text-white group-hover:text-sky-600 dark:group-hover:text-sky-400 transition-colors truncate">{sanitizeText(patient.name) || 'Sem nome'}</h3>
+                                    <div className="flex flex-col sm:flex-row items-start sm:items-center gap-1 sm:gap-3 text-xs sm:text-sm text-gray-600 dark:text-gray-400 mt-0.5">
                                         {patient.email && (
-                                            <span className="flex items-center gap-1 text-gray-600 dark:text-gray-400">
-                                                <Mail size={12} className="text-gray-500 dark:text-gray-500" /> {sanitizeText(patient.email)}
+                                            <span className="flex items-center gap-1 text-gray-600 dark:text-gray-400 truncate max-w-full">
+                                                <Mail size={12} className="text-gray-500 dark:text-gray-500 flex-shrink-0" /> <span className="truncate">{sanitizeText(patient.email)}</span>
                                             </span>
                                         )}
                                         {patient.phone && (
                                             <span className="flex items-center gap-1 text-gray-600 dark:text-gray-400">
-                                                <Phone size={12} className="text-gray-500 dark:text-gray-500" /> {formatPhoneNumber(patient.phone)}
+                                                <Phone size={12} className="text-gray-500 dark:text-gray-500 flex-shrink-0" /> {formatPhoneNumber(patient.phone)}
                                             </span>
                                         )}
                                     </div>
+                                    {patient.last_visit && (
+                                        <div className="sm:hidden mt-1">
+                                            <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+                                                <Calendar size={12} className="text-gray-500 dark:text-gray-500" />
+                                                {formatDate(patient.last_visit)}
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
 
-                            <div className="flex items-center gap-4 sm:gap-8">
+                            <div className="flex items-center gap-2 sm:gap-4 flex-shrink-0">
                                 {patient.last_visit && (
                                     <div className="hidden sm:block text-right">
                                         <p className="text-xs text-gray-500 dark:text-gray-400 mb-0.5">{t('patients.lastVisit')}</p>
@@ -316,7 +324,7 @@ const Patients: React.FC = () => {
                                         </div>
                                     </div>
                                 )}
-                                <ChevronRight className="text-gray-300 dark:text-gray-600 group-hover:text-sky-500 dark:group-hover:text-sky-400 transition-colors" size={20} />
+                                <ChevronRight className="text-gray-300 dark:text-gray-600 group-hover:text-sky-500 dark:group-hover:text-sky-400 transition-colors flex-shrink-0" size={20} />
                             </div>
                         </motion.div>
                         ))

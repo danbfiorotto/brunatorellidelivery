@@ -468,24 +468,24 @@ const Reports: React.FC = () => {
 
     return (
         <div className="space-y-6">
-            <div className="bg-gradient-to-r from-sky-500 to-emerald-500 dark:from-sky-600 dark:to-emerald-600 rounded-2xl p-6 md:p-8 text-white mb-8 shadow-xl">
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="bg-gradient-to-r from-sky-500 to-emerald-500 dark:from-sky-600 dark:to-emerald-600 rounded-xl sm:rounded-2xl p-4 sm:p-6 md:p-8 text-white mb-6 sm:mb-8 shadow-xl">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 sm:gap-4">
                     <div>
-                        <h2 className="text-3xl md:text-4xl font-bold mb-2">{t('reports.title')}</h2>
-                        <p className="text-white/90">{t('reports.subtitle')}</p>
+                        <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold mb-1 sm:mb-2">{t('reports.title')}</h2>
+                        <p className="text-sm sm:text-base text-white/90">{t('reports.subtitle')}</p>
                     </div>
-                    <div className="flex flex-wrap gap-3">
-                        <div className="relative">
+                    <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 w-full sm:w-auto">
+                        <div className="relative w-full sm:w-auto">
                             <button
                                 type="button"
                                 onClick={() => {
                                     setPeriodDropdownOpen(!periodDropdownOpen);
                                 }}
-                                className="pl-10 pr-10 py-3 bg-white/20 backdrop-blur-sm border border-white/30 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-white/50 hover:bg-white/30 transition-colors flex items-center gap-2 min-w-[200px]"
+                                className="w-full sm:w-auto pl-10 pr-10 py-2.5 sm:py-3 bg-white/20 backdrop-blur-sm border border-white/30 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-white/50 hover:bg-white/30 transition-colors flex items-center gap-2 min-w-[200px] min-h-[44px] text-sm sm:text-base"
                             >
                                 <Filter className="absolute left-3 text-white/80" size={18} />
-                                <span className="flex-1 text-left">{getPeriodLabel()}</span>
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <span className="flex-1 text-left truncate">{getPeriodLabel()}</span>
+                                <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                                 </svg>
                             </button>
@@ -525,76 +525,77 @@ const Reports: React.FC = () => {
 
                         <Button 
                             onClick={handleExportPDF} 
-                            className="bg-white text-sky-600 hover:bg-gray-50 shadow-lg gap-2"
+                            className="bg-white text-sky-600 hover:bg-gray-50 shadow-lg gap-2 w-full sm:w-auto text-sm sm:text-base"
                         >
                             <Download size={18} />
-                            Exportar PDF
+                            <span className="hidden sm:inline">Exportar PDF</span>
+                            <span className="sm:hidden">Exportar</span>
                         </Button>
                     </div>
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-                <Card className="bg-gradient-to-br from-emerald-50 to-emerald-100/50 border-emerald-200">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 md:gap-6">
+                <Card className="bg-gradient-to-br from-emerald-50 to-emerald-100/50 border-emerald-200 p-4 sm:p-6">
                     <div className="flex justify-between items-start">
-                        <div>
-                            <p className="text-sm font-semibold text-emerald-700 mb-1">
+                        <div className="flex-1 min-w-0">
+                            <p className="text-xs sm:text-sm font-semibold text-emerald-700 mb-1">
                                 📅 Serviços Prestados
                             </p>
-                            <p className="text-3xl font-bold text-emerald-900 mb-1">
+                            <p className="text-xl sm:text-2xl md:text-3xl font-bold text-emerald-900 mb-1 break-words">
                                 {formatCurrency(stats.totalRevenue, currency)}
                             </p>
-                            {loading && <p className="text-xs text-emerald-600 mt-2">Carregando...</p>}
+                            {loading && <p className="text-[10px] sm:text-xs text-emerald-600 mt-2">Carregando...</p>}
                         </div>
                     </div>
                 </Card>
-                <Card className="bg-gradient-to-br from-sky-50 to-sky-100/50 border-sky-200">
+                <Card className="bg-gradient-to-br from-sky-50 to-sky-100/50 border-sky-200 p-4 sm:p-6">
                     <div className="flex justify-between items-start">
-                        <div>
-                            <p className="text-sm font-semibold text-sky-700 mb-1">Ticket Médio</p>
-                            <p className="text-3xl font-bold text-sky-900 mb-1">
+                        <div className="flex-1 min-w-0">
+                            <p className="text-xs sm:text-sm font-semibold text-sky-700 mb-1">Ticket Médio</p>
+                            <p className="text-xl sm:text-2xl md:text-3xl font-bold text-sky-900 mb-1 break-words">
                                 {formatCurrency(stats.ticketMedio, currency)}
                             </p>
-                            <p className="text-xs text-sky-600 mt-2">Por atendimento</p>
+                            <p className="text-[10px] sm:text-xs text-sky-600 mt-2">Por atendimento</p>
                         </div>
                     </div>
                 </Card>
-                <Card className="bg-gradient-to-br from-violet-50 to-violet-100/50 border-violet-200">
+                <Card className="bg-gradient-to-br from-violet-50 to-violet-100/50 border-violet-200 p-4 sm:p-6">
                     <div className="flex justify-between items-start">
-                        <div>
-                            <p className="text-sm font-semibold text-violet-700 mb-1">Total Atendimentos</p>
-                            <p className="text-3xl font-bold text-violet-900 mb-1">{stats.totalAppointments}</p>
-                            {loading && <p className="text-xs text-violet-600 mt-2">Carregando...</p>}
+                        <div className="flex-1 min-w-0">
+                            <p className="text-xs sm:text-sm font-semibold text-violet-700 mb-1">Total Atendimentos</p>
+                            <p className="text-xl sm:text-2xl md:text-3xl font-bold text-violet-900 mb-1">{stats.totalAppointments}</p>
+                            {loading && <p className="text-[10px] sm:text-xs text-violet-600 mt-2">Carregando...</p>}
                         </div>
                     </div>
                 </Card>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <Card>
-                    <div className="mb-4">
-                        <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-1">Recebido vs. Pendente</h3>
-                        <p className="text-sm text-slate-500 dark:text-gray-400">Comparativo de valores no período</p>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+                <Card className="p-4 sm:p-6">
+                    <div className="mb-3 sm:mb-4">
+                        <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white mb-1">Recebido vs. Pendente</h3>
+                        <p className="text-xs sm:text-sm text-slate-500 dark:text-gray-400">Comparativo de valores no período</p>
                     </div>
-                    <div className="h-64 sm:h-80">
+                    <div className="h-48 sm:h-64 md:h-80">
                         <Bar data={barData} options={chartOptions} />
                     </div>
                 </Card>
-                <Card>
-                    <div className="mb-4">
-                        <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-1">Distribuição por Clínica</h3>
-                        <p className="text-sm text-slate-500 dark:text-gray-400">Percentual e valores faturados</p>
+                <Card className="p-4 sm:p-6">
+                    <div className="mb-3 sm:mb-4">
+                        <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white mb-1">Distribuição por Clínica</h3>
+                        <p className="text-xs sm:text-sm text-slate-500 dark:text-gray-400">Percentual e valores faturados</p>
                     </div>
-                    <div className="h-64 sm:h-80">
+                    <div className="h-48 sm:h-64 md:h-80">
                         <Pie data={pieData} options={pieOptions} />
                     </div>
                 </Card>
             </div>
 
-            <Card>
-                <div className="mb-4">
-                    <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-1">Atendimentos do Período</h3>
-                    <p className="text-sm text-slate-500 dark:text-gray-400">Todos os atendimentos do período selecionado ({reportsData.length} {reportsData.length === 1 ? 'atendimento' : 'atendimentos'})</p>
+            <Card className="p-4 sm:p-6">
+                <div className="mb-3 sm:mb-4">
+                    <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white mb-1">Atendimentos do Período</h3>
+                    <p className="text-xs sm:text-sm text-slate-500 dark:text-gray-400">Todos os atendimentos do período selecionado ({reportsData.length} {reportsData.length === 1 ? 'atendimento' : 'atendimentos'})</p>
                 </div>
                 <div className="overflow-x-auto -mx-2 sm:mx-0">
                     <table className="w-full text-left min-w-[640px] sm:min-w-0">
@@ -665,7 +666,7 @@ const Reports: React.FC = () => {
                             onChange={(e: ChangeEvent<HTMLInputElement>) => setCustomEndDate(e.target.value)}
                         />
                     </div>
-                    <div className="flex gap-2 pt-2">
+                    <div className="flex flex-col sm:flex-row gap-2 pt-2">
                         <Button
                             variant="secondary"
                             onClick={() => {
@@ -675,7 +676,7 @@ const Reports: React.FC = () => {
                                 setCustomStartDate(twoMonthsAgo.toISOString().split('T')[0]);
                                 setCustomEndDate(today.toISOString().split('T')[0]);
                             }}
-                            className="text-sm"
+                            className="text-sm w-full sm:w-auto"
                         >
                             2 meses atrás
                         </Button>
@@ -688,7 +689,7 @@ const Reports: React.FC = () => {
                                 setCustomStartDate(threeMonthsAgo.toISOString().split('T')[0]);
                                 setCustomEndDate(today.toISOString().split('T')[0]);
                             }}
-                            className="text-sm"
+                            className="text-sm w-full sm:w-auto"
                         >
                             3 meses atrás
                         </Button>

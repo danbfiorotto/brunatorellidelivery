@@ -26,10 +26,11 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
                     <input
                         ref={ref}
                         className={cn(
-                            "w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-4 focus:ring-sky-500/10 focus:border-sky-500 transition-all",
-                            "bg-white dark:bg-gray-800 text-slate-900 dark:text-white",
+                            "w-full px-3 sm:px-4 py-2.5 sm:py-3 border rounded-xl focus:outline-none focus:ring-4 focus:ring-sky-500/10 focus:border-sky-500 transition-all",
+                            "bg-white dark:bg-gray-800 text-slate-900 dark:text-white text-base sm:text-sm",
+                            "min-h-[44px]",
                             "disabled:bg-gray-50 dark:disabled:bg-gray-900 disabled:text-gray-500 dark:disabled:text-gray-400 disabled:cursor-not-allowed",
-                            icon && "pl-10",
+                            icon && "pl-9 sm:pl-10",
                             error ? 'border-red-300 dark:border-red-700 focus:ring-red-200 dark:focus:ring-red-900/30' : 'border-gray-200 dark:border-gray-700'
                         )}
                         {...props}

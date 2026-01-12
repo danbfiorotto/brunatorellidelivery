@@ -10,6 +10,14 @@ export default {
             fontFamily: {
                 sans: ['"Plus Jakarta Sans"', 'sans-serif'],
             },
+            screens: {
+                'xs': '375px',
+                'sm': '640px',
+                'md': '768px',
+                'lg': '1024px',
+                'xl': '1280px',
+                '2xl': '1536px',
+            },
             colors: {
                 primary: {
                     50: '#f0f9ff',
@@ -37,6 +45,15 @@ export default {
                     900: '#134e4a',
                     950: '#042f2e',
                 },
+            },
+            spacing: {
+                'touch': '44px',
+            },
+            minHeight: {
+                'touch': '44px',
+            },
+            minWidth: {
+                'touch': '44px',
             },
             animation: {
                 'fade-in': 'fadeIn 0.5s ease-out',

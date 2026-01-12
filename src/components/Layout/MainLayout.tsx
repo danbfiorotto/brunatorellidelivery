@@ -96,10 +96,10 @@ const MainLayout: React.FC = () => {
             </aside>
 
             {/* Mobile Header */}
-            <div className="lg:hidden fixed top-0 left-0 right-0 z-30 p-3 sm:p-4">
-                <div className="glass-panel rounded-xl p-3 sm:p-4 flex items-center justify-between bg-gradient-to-r from-sky-500 to-emerald-500 dark:from-sky-600 dark:to-emerald-600 dark:bg-gray-800/90 dark:border-gray-700">
-                    <Logo size="sm" textClassName="text-white text-base sm:text-lg" />
-                    <button onClick={toggleMobileMenu} className="p-2 text-white">
+            <div className="lg:hidden fixed top-0 left-0 right-0 z-30 p-2 sm:p-3">
+                <div className="glass-panel rounded-xl p-2 sm:p-3 flex items-center justify-between bg-gradient-to-r from-sky-500 to-emerald-500 dark:from-sky-600 dark:to-emerald-600 dark:bg-gray-800/90 dark:border-gray-700">
+                    <Logo size="sm" textClassName="text-white text-sm sm:text-base md:text-lg" />
+                    <button onClick={toggleMobileMenu} className="p-2 min-h-[44px] min-w-[44px] text-white flex items-center justify-center" aria-label="Menu">
                         {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
                     </button>
                 </div>
@@ -153,7 +153,7 @@ const MainLayout: React.FC = () => {
             </AnimatePresence>
 
             {/* Main Content */}
-            <main className="flex-1 lg:ml-72 p-3 sm:p-4 lg:p-8 pt-20 sm:pt-24 lg:pt-8 min-h-screen transition-all duration-300 pb-20 sm:pb-24 lg:pb-8">
+            <main className="flex-1 lg:ml-72 p-3 sm:p-4 lg:p-8 pt-16 sm:pt-20 lg:pt-8 min-h-screen transition-all duration-300 pb-20 sm:pb-24 lg:pb-8">
                 <div className="max-w-7xl mx-auto">
                     <AnimatePresence mode="wait">
                         <motion.div
@@ -171,13 +171,13 @@ const MainLayout: React.FC = () => {
 
             {/* Bottom Navigation - Mobile First */}
             <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-30 bg-white dark:bg-gray-800 border-t border-slate-200 dark:border-gray-700 shadow-lg safe-area-inset-bottom">
-                <div className="flex items-center justify-around px-1 sm:px-2 py-2">
-                    <BottomNavItem to="/" icon={<LayoutDashboard size={22} />} label={t('nav.dashboard')} />
-                    <BottomNavItem to="/appointments" icon={<Calendar size={22} />} label={t('nav.appointments')} />
-                    <BottomNavItem to="/reports" icon={<BarChart3 size={22} />} label={t('nav.reports')} />
-                    <BottomNavItem to="/clinics" icon={<Building2 size={22} />} label={t('nav.clinics')} />
-                    <BottomNavItem to="/patients" icon={<Users size={22} />} label={t('nav.patients')} />
-                    <BottomNavItem to="/profile" icon={<User size={22} />} label={t('nav.profile')} />
+                <div className="flex items-center justify-around px-1 sm:px-2 py-1.5 sm:py-2">
+                    <BottomNavItem to="/" icon={<LayoutDashboard size={20} />} label={t('nav.dashboard')} />
+                    <BottomNavItem to="/appointments" icon={<Calendar size={20} />} label={t('nav.appointments')} />
+                    <BottomNavItem to="/reports" icon={<BarChart3 size={20} />} label={t('nav.reports')} />
+                    <BottomNavItem to="/clinics" icon={<Building2 size={20} />} label={t('nav.clinics')} />
+                    <BottomNavItem to="/patients" icon={<Users size={20} />} label={t('nav.patients')} />
+                    <BottomNavItem to="/profile" icon={<User size={20} />} label={t('nav.profile')} />
                 </div>
             </nav>
         </div>
@@ -226,15 +226,15 @@ const BottomNavItem: React.FC<BottomNavItemProps> = ({ to, icon, label }) => (
         to={to}
         className={({ isActive }) =>
             cn(
-                "flex flex-col items-center justify-center gap-0.5 sm:gap-1 px-1 sm:px-2 py-1.5 sm:py-2 rounded-xl transition-all duration-200 min-w-[50px] sm:min-w-[60px]",
+                "flex flex-col items-center justify-center gap-0.5 sm:gap-1 px-1 sm:px-2 py-1.5 sm:py-2 rounded-xl transition-all duration-200 min-w-[44px] min-h-[60px] sm:min-w-[60px]",
                 isActive
                     ? "text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-900/30"
                     : "text-slate-400 dark:text-gray-500 hover:text-slate-600 dark:hover:text-gray-300"
             )
         }
     >
-        <span className="text-lg sm:text-xl">{icon}</span>
-        <span className="text-[9px] sm:text-[10px] font-medium">{label}</span>
+        <span className="text-base sm:text-lg md:text-xl">{icon}</span>
+        <span className="text-[9px] sm:text-[10px] font-medium leading-tight text-center">{label}</span>
     </NavLink>
 );
 

@@ -73,12 +73,25 @@
   /* Ensure tables scroll smoothly on mobile */
   .overflow-x-auto {
     -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
   }
   
   /* Better touch targets on mobile */
-  button, a {
+  button, a, [role="button"] {
     min-height: 44px;
     min-width: 44px;
+  }
+  
+  /* Improve text readability on small screens */
+  body {
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  
+  /* Reduce padding on mobile */
+  .container {
+    padding-left: 1rem;
+    padding-right: 1rem;
   }
 }
 
@@ -115,4 +128,34 @@ input[type="time"]::before {
 /* Force 24-hour format display */
 input[type="time"] {
   direction: ltr;
+}
+
+/* Mobile-specific improvements */
+@media (max-width: 640px) {
+  /* Improve form inputs on mobile */
+  input, textarea, select {
+    font-size: 16px; /* Prevents zoom on iOS */
+  }
+  
+  /* Better spacing for mobile cards */
+  .card-mobile {
+    padding: 1rem;
+  }
+  
+  /* Hide scrollbar indicator on mobile tables */
+  .table-scroll-indicator {
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 20px;
+    background: linear-gradient(to right, transparent, rgba(0,0,0,0.1));
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+  
+  .table-scroll-indicator.visible {
+    opacity: 1;
+  }
 }

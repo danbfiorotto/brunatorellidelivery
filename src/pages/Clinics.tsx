@@ -284,35 +284,35 @@ const Clinics: React.FC = () => {
             animate="show"
             className="space-y-6"
         >
-            <div className="bg-gradient-to-r from-sky-500 to-emerald-500 dark:from-sky-600 dark:to-emerald-600 rounded-2xl p-6 md:p-8 text-white mb-8 shadow-xl">
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+            <div className="bg-gradient-to-r from-sky-500 to-emerald-500 dark:from-sky-600 dark:to-emerald-600 rounded-xl sm:rounded-2xl p-4 sm:p-6 md:p-8 text-white mb-6 sm:mb-8 shadow-xl">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 sm:gap-4 mb-4 sm:mb-6">
                     <div>
-                        <h2 className="text-3xl md:text-4xl font-bold mb-2">{t('clinics.title')}</h2>
-                        <p className="text-white/90">{t('clinics.subtitle')}</p>
+                        <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold mb-1 sm:mb-2">{t('clinics.title')}</h2>
+                        <p className="text-sm sm:text-base text-white/90">{t('clinics.subtitle')}</p>
                     </div>
                     <Button 
                         onClick={() => setIsModalOpen(true)} 
-                        className="gap-2 bg-white dark:bg-gray-800 text-sky-600 dark:text-sky-400 hover:bg-gray-50 dark:hover:bg-gray-700 shadow-lg"
+                        className="gap-2 bg-white dark:bg-gray-800 text-sky-600 dark:text-sky-400 hover:bg-gray-50 dark:hover:bg-gray-700 shadow-lg w-full sm:w-auto text-sm sm:text-base"
                     >
-                        <Plus size={20} />
+                        <Plus size={18} />
                         {t('clinics.newClinic')}
                     </Button>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <div className="bg-white/20 backdrop-blur-sm rounded-xl p-4 border border-white/30">
-                        <p className="text-sm font-medium text-white/80 mb-1">{t('clinics.totalClinics')}</p>
-                        <p className="text-2xl font-bold text-white">{clinics.length}</p>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+                    <div className="bg-white/20 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-white/30">
+                        <p className="text-xs sm:text-sm font-medium text-white/80 mb-1">{t('clinics.totalClinics')}</p>
+                        <p className="text-xl sm:text-2xl font-bold text-white">{clinics.length}</p>
                     </div>
-                    <div className="bg-white/20 backdrop-blur-sm rounded-xl p-4 border border-white/30">
-                        <p className="text-sm font-medium text-white/80 mb-1">{t('clinics.totalAppointments')}</p>
-                        <p className="text-2xl font-bold text-white">
+                    <div className="bg-white/20 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-white/30">
+                        <p className="text-xs sm:text-sm font-medium text-white/80 mb-1">{t('clinics.totalAppointments')}</p>
+                        <p className="text-xl sm:text-2xl font-bold text-white">
                             {Object.values(clinicStats).reduce((sum, stats) => sum + stats.appointments, 0)}
                         </p>
                     </div>
-                    <div className="bg-white/20 backdrop-blur-sm rounded-xl p-4 border border-white/30">
-                        <p className="text-sm font-medium text-white/80 mb-1">{t('clinics.averageTicket')}</p>
-                        <p className="text-2xl font-bold text-white">
+                    <div className="bg-white/20 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-white/30">
+                        <p className="text-xs sm:text-sm font-medium text-white/80 mb-1">{t('clinics.averageTicket')}</p>
+                        <p className="text-xl sm:text-2xl font-bold text-white break-words">
                             {(() => {
                                 const totalRevenue = Object.values(clinicStats).reduce((sum, stats) => sum + stats.revenue, 0);
                                 const totalAppointments = Object.values(clinicStats).reduce((sum, stats) => sum + stats.appointments, 0);
@@ -325,13 +325,13 @@ const Clinics: React.FC = () => {
             </div>
 
             <Card className="p-0 overflow-hidden">
-                <div className="p-4 border-b border-slate-100 bg-slate-50/50">
-                    <div className="relative max-w-md">
+                <div className="p-3 sm:p-4 border-b border-slate-100 bg-slate-50/50">
+                    <div className="relative w-full max-w-md">
                         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" size={18} />
                         <input
                             type="text"
                             placeholder={t('clinics.searchPlaceholder')}
-                            className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all"
+                            className="w-full pl-10 pr-4 py-2.5 sm:py-2 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all text-base sm:text-sm min-h-[44px]"
                             value={searchTerm}
                             onChange={(e: ChangeEvent<HTMLInputElement>) => setSearchTerm(e.target.value)}
                         />
@@ -376,9 +376,9 @@ const Clinics: React.FC = () => {
                                     </div>
                                 </TableCell>
                                 <TableCell>
-                                    <div className="flex items-center gap-2 text-slate-600 text-sm">
-                                        <MapPin size={14} className="text-slate-400" />
-                                        {sanitizeText(clinic.address)}
+                                    <div className="flex items-center gap-2 text-slate-600 text-xs sm:text-sm">
+                                        <MapPin size={14} className="text-slate-400 flex-shrink-0" />
+                                        <span className="truncate max-w-[150px] sm:max-w-none">{sanitizeText(clinic.address)}</span>
                                     </div>
                                 </TableCell>
                                 <TableCell>
@@ -393,7 +393,7 @@ const Clinics: React.FC = () => {
                                     <Badge variant="success">{t('clinics.active')}</Badge>
                                 </TableCell>
                                 <TableCell>
-                                    <div className="flex items-center justify-end gap-2">
+                                    <div className="flex items-center justify-end gap-1 sm:gap-2">
                                         <button 
                                             onClick={() => {
                                                 setFormData({
@@ -405,7 +405,7 @@ const Clinics: React.FC = () => {
                                                 setEditingAppointment(clinic);
                                                 setIsModalOpen(true);
                                             }}
-                                            className="p-2 text-gray-400 hover:text-sky-600 rounded-lg hover:bg-sky-50 transition-colors"
+                                            className="p-2 min-h-[44px] min-w-[44px] text-gray-400 hover:text-sky-600 rounded-lg hover:bg-sky-50 transition-colors flex items-center justify-center"
                                             title={t('clinics.edit')}
                                         >
                                             <Edit2 size={18} />
@@ -422,7 +422,7 @@ const Clinics: React.FC = () => {
                                                     }
                                                 }
                                             }}
-                                            className="p-2 text-gray-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors"
+                                            className="p-2 min-h-[44px] min-w-[44px] text-gray-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors flex items-center justify-center"
                                             title={t('clinics.delete')}
                                         >
                                             <Trash2 size={18} />

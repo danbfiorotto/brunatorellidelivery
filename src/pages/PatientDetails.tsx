@@ -77,14 +77,14 @@ interface TabButtonProps {
 const TabButton: React.FC<TabButtonProps> = ({ active, onClick, icon, label }) => (
     <button
         onClick={onClick}
-        className={`flex items-center gap-2 pb-4 border-b-2 transition-colors ${
+        className={`flex items-center gap-1.5 sm:gap-2 pb-3 sm:pb-4 border-b-2 transition-colors min-h-[44px] text-sm sm:text-base whitespace-nowrap ${
             active
                 ? 'border-sky-500 text-sky-600 font-semibold'
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-200'
         }`}
     >
-        {icon}
-        {label}
+        <span className="text-base sm:text-lg">{icon}</span>
+        <span>{label}</span>
     </button>
 );
 
@@ -323,24 +323,24 @@ const PatientDetails: React.FC = () => {
         : null;
 
     return (
-        <div className="space-y-6">
-            <div className="bg-gradient-to-r from-sky-500 to-emerald-500 rounded-2xl p-6 md:p-8 text-white mb-8 shadow-xl">
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                    <div className="flex items-center gap-4">
-                        <div className="w-16 h-16 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center text-white font-bold text-2xl shadow-lg">
+        <div className="space-y-4 sm:space-y-6">
+            <div className="bg-gradient-to-r from-sky-500 to-emerald-500 rounded-xl sm:rounded-2xl p-4 sm:p-6 md:p-8 text-white mb-6 sm:mb-8 shadow-xl">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 sm:gap-4">
+                    <div className="flex items-center gap-3 sm:gap-4">
+                        <div className="w-12 h-12 sm:w-14 sm:h-14 md:w-16 md:h-16 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center text-white font-bold text-xl sm:text-2xl shadow-lg flex-shrink-0">
                             {patient.name.charAt(0)}
                         </div>
-                        <div>
-                            <h2 className="text-3xl font-bold mb-1">{patient.name}</h2>
-                            <p className="text-white/90">
+                        <div className="min-w-0 flex-1">
+                            <h2 className="text-xl sm:text-2xl md:text-3xl font-bold mb-1 truncate">{patient.name}</h2>
+                            <p className="text-sm sm:text-base text-white/90 truncate">
                                 {patient.email} {patient.phone && `• ${formatPhoneNumber(patient.phone)}`}
                             </p>
                         </div>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
                         <Button 
                             variant="secondary" 
-                            className="flex items-center gap-2 bg-white/20 hover:bg-white/30 text-white border-white/30"
+                            className="flex items-center justify-center gap-2 bg-white/20 hover:bg-white/30 text-white border-white/30 text-sm sm:text-base w-full sm:w-auto"
                             onClick={() => setIsEditModalOpen(true)}
                         >
                             <Edit size={18} />
@@ -348,7 +348,7 @@ const PatientDetails: React.FC = () => {
                         </Button>
                         <Button 
                             variant="danger" 
-                            className="flex items-center gap-2 bg-red-500 hover:bg-red-600 text-white border-0"
+                            className="flex items-center justify-center gap-2 bg-red-500 hover:bg-red-600 text-white border-0 text-sm sm:text-base w-full sm:w-auto"
                             onClick={handleDelete}
                         >
                             <Trash2 size={18} />
@@ -358,8 +358,8 @@ const PatientDetails: React.FC = () => {
                 </div>
             </div>
 
-            <div className="border-b border-gray-200 bg-white rounded-t-2xl">
-                <nav className="flex gap-8 px-6">
+            <div className="border-b border-gray-200 bg-white rounded-t-xl sm:rounded-t-2xl overflow-x-auto">
+                <nav className="flex gap-4 sm:gap-6 md:gap-8 px-4 sm:px-6 min-w-max sm:min-w-0">
                     <TabButton
                         active={activeTab === 'summary'}
                         onClick={() => setActiveTab('summary')}
@@ -381,9 +381,9 @@ const PatientDetails: React.FC = () => {
                 </nav>
             </div>
 
-            <div className="mt-6">
+            <div className="mt-4 sm:mt-6">
                 {activeTab === 'summary' && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 md:gap-6">
                         <Card className="bg-gradient-to-br from-sky-50 to-sky-100/50 border-sky-200">
                             <div className="mb-4">
                                 <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-1">Estatísticas</h3>
@@ -492,7 +492,7 @@ const PatientDetails: React.FC = () => {
                             <p className="text-sm text-gray-500 dark:text-gray-400">Imagens e exames do paciente</p>
                         </div>
                         {radiographs.length > 0 && (
-                            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4 mb-6">
+                            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 sm:gap-3 md:gap-4 mb-4 sm:mb-6">
                                 {radiographs.map((radio) => (
                                     <div key={radio.id} className="aspect-square bg-gray-100 rounded-xl flex items-center justify-center border-2 border-gray-200 hover:border-sky-300 transition-all cursor-pointer group relative overflow-hidden">
                                         {radio.file_url ? (
@@ -548,9 +548,9 @@ const PatientDetails: React.FC = () => {
                                 ))}
                             </div>
                         )}
-                        <div className="text-center py-8 border-2 border-dashed border-gray-200 rounded-xl hover:border-sky-300 transition-colors">
-                            <ImageIcon className="mx-auto text-gray-300 mb-3" size={48} />
-                            <p className="text-gray-600 dark:text-gray-300 mb-2">Fazer upload de nova radiografia</p>
+                        <div className="text-center py-6 sm:py-8 border-2 border-dashed border-gray-200 rounded-xl hover:border-sky-300 transition-colors px-4">
+                            <ImageIcon className="mx-auto text-gray-300 mb-2 sm:mb-3" size={40} />
+                            <p className="text-sm sm:text-base text-gray-600 dark:text-gray-300 mb-2 sm:mb-3">Fazer upload de nova radiografia</p>
                             <input
                                 ref={fileInputRef}
                                 type="file"
@@ -563,6 +563,7 @@ const PatientDetails: React.FC = () => {
                                     variant="secondary"
                                     onClick={() => fileInputRef.current?.click()}
                                     disabled={uploading}
+                                    className="w-full sm:w-auto"
                                 >
                                     {uploading ? 'Enviando...' : 'Selecionar Arquivo'}
                                 </Button>

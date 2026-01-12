@@ -57,39 +57,39 @@ export const Pagination: React.FC<PaginationProps> = ({
     const endRecord = Math.min(page * pageSize, total);
 
     return (
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-4 p-3 sm:p-4 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
             {/* Informações */}
-            <div className="text-sm text-gray-600 dark:text-gray-400">
+            <div className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 text-center sm:text-left">
                 Mostrando <span className="font-medium">{startRecord}</span> a{' '}
                 <span className="font-medium">{endRecord}</span> de{' '}
                 <span className="font-medium">{total}</span> resultados
             </div>
 
             {/* Controles de navegação */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 sm:gap-2 flex-wrap justify-center">
                 {/* Botão Anterior */}
                 <Button
                     variant="secondary"
                     onClick={() => handlePageChange(page - 1)}
                     disabled={!hasPrev}
-                    className="px-3 py-1.5"
+                    className="px-2 sm:px-3 py-1.5 min-h-[44px] min-w-[44px]"
                 >
-                    <ChevronLeft size={16} />
+                    <ChevronLeft size={18} />
                 </Button>
 
                 {/* Números de página */}
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-0.5 sm:gap-1">
                     {pageNumbers[0] > 1 && (
                         <>
                             <Button
                                 variant={1 === page ? 'primary' : 'secondary'}
                                 onClick={() => handlePageChange(1)}
-                                className="px-3 py-1.5 min-w-[40px]"
+                                className="px-2 sm:px-3 py-1.5 min-w-[44px] min-h-[44px] text-xs sm:text-sm"
                             >
                                 1
                             </Button>
                             {pageNumbers[0] > 2 && (
-                                <span className="px-2 text-gray-400">...</span>
+                                <span className="px-1 sm:px-2 text-gray-400 text-xs">...</span>
                             )}
                         </>
                     )}
@@ -99,7 +99,7 @@ export const Pagination: React.FC<PaginationProps> = ({
                             key={pageNum}
                             variant={pageNum === page ? 'primary' : 'secondary'}
                             onClick={() => handlePageChange(pageNum)}
-                            className="px-3 py-1.5 min-w-[40px]"
+                            className="px-2 sm:px-3 py-1.5 min-w-[44px] min-h-[44px] text-xs sm:text-sm"
                         >
                             {pageNum}
                         </Button>
@@ -108,12 +108,12 @@ export const Pagination: React.FC<PaginationProps> = ({
                     {pageNumbers[pageNumbers.length - 1] < totalPages && (
                         <>
                             {pageNumbers[pageNumbers.length - 1] < totalPages - 1 && (
-                                <span className="px-2 text-gray-400">...</span>
+                                <span className="px-1 sm:px-2 text-gray-400 text-xs">...</span>
                             )}
                             <Button
                                 variant={totalPages === page ? 'primary' : 'secondary'}
                                 onClick={() => handlePageChange(totalPages)}
-                                className="px-3 py-1.5 min-w-[40px]"
+                                className="px-2 sm:px-3 py-1.5 min-w-[44px] min-h-[44px] text-xs sm:text-sm"
                             >
                                 {totalPages}
                             </Button>
@@ -126,9 +126,9 @@ export const Pagination: React.FC<PaginationProps> = ({
                     variant="secondary"
                     onClick={() => handlePageChange(page + 1)}
                     disabled={!hasNext}
-                    className="px-3 py-1.5"
+                    className="px-2 sm:px-3 py-1.5 min-h-[44px] min-w-[44px]"
                 >
-                    <ChevronRight size={16} />
+                    <ChevronRight size={18} />
                 </Button>
             </div>
         </div>

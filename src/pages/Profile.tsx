@@ -144,26 +144,26 @@ const Profile: React.FC = () => {
     };
 
     return (
-        <div className="space-y-6 max-w-4xl mx-auto">
-            <div className="bg-gradient-to-r from-sky-500 to-emerald-500 dark:from-sky-600 dark:to-emerald-600 rounded-2xl p-6 md:p-8 text-white mb-8 shadow-xl">
-                <h2 className="text-3xl md:text-4xl font-bold mb-2">{t('profile.title')}</h2>
-                <p className="text-white/90">{t('profile.subtitle')}</p>
+        <div className="space-y-4 sm:space-y-6 max-w-4xl mx-auto">
+            <div className="bg-gradient-to-r from-sky-500 to-emerald-500 dark:from-sky-600 dark:to-emerald-600 rounded-xl sm:rounded-2xl p-4 sm:p-6 md:p-8 text-white mb-6 sm:mb-8 shadow-xl">
+                <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold mb-1 sm:mb-2">{t('profile.title')}</h2>
+                <p className="text-sm sm:text-base text-white/90">{t('profile.subtitle')}</p>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
                 {/* Sidebar / User Info */}
-                <div className="space-y-6">
-                    <Card className="text-center">
-                        <div className="w-24 h-24 bg-gradient-to-br from-sky-400 to-emerald-500 dark:from-sky-500 dark:to-emerald-600 rounded-full flex items-center justify-center text-white font-bold text-3xl mx-auto mb-4 shadow-lg">
+                <div className="space-y-4 sm:space-y-6">
+                    <Card className="text-center p-4 sm:p-6">
+                        <div className="w-20 h-20 sm:w-24 sm:h-24 bg-gradient-to-br from-sky-400 to-emerald-500 dark:from-sky-500 dark:to-emerald-600 rounded-full flex items-center justify-center text-white font-bold text-2xl sm:text-3xl mx-auto mb-3 sm:mb-4 shadow-lg">
                             {formData.name.charAt(0)}
                         </div>
-                        <h3 className="font-bold text-slate-900 dark:text-white mb-1">{formData.name}</h3>
-                        <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">{formData.email}</p>
+                        <h3 className="font-bold text-sm sm:text-base text-slate-900 dark:text-white mb-1 truncate px-2">{formData.name}</h3>
+                        <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mb-3 sm:mb-4 truncate px-2">{formData.email}</p>
                         <Button 
                             variant="secondary" 
                             onClick={handleSignOut}
                             disabled={isLoggingOut}
-                            className="w-full flex items-center justify-center gap-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-700 dark:hover:text-red-300 border-red-200 dark:border-red-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="w-full flex items-center justify-center gap-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-700 dark:hover:text-red-300 border-red-200 dark:border-red-800 disabled:opacity-50 disabled:cursor-not-allowed text-sm sm:text-base"
                         >
                             {isLoggingOut ? (
                                 <>
@@ -181,10 +181,10 @@ const Profile: React.FC = () => {
                 </div>
 
                 {/* Settings Form */}
-                <div className="md:col-span-2 space-y-6">
-                    <Card>
-                        <div className="mb-4 pb-4 border-b border-gray-100 dark:border-gray-700">
-                            <h3 className="text-lg font-bold text-slate-900 dark:text-white">{t('profile.personalInfo')}</h3>
+                <div className="md:col-span-2 space-y-4 sm:space-y-6">
+                    <Card className="p-4 sm:p-6">
+                        <div className="mb-3 sm:mb-4 pb-3 sm:pb-4 border-b border-gray-100 dark:border-gray-700">
+                            <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">{t('profile.personalInfo')}</h3>
                         </div>
                         <form onSubmit={handleSave}>
                             <Input
@@ -192,7 +192,7 @@ const Profile: React.FC = () => {
                                 value={formData.name}
                                 onChange={(e: ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, name: e.target.value })}
                             />
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                                 <Input
                                     label={t('profile.email')}
                                     value={formData.email}
@@ -210,25 +210,25 @@ const Profile: React.FC = () => {
                                     }}
                                 />
                             </div>
-                            <div className="flex justify-end mt-4">
-                                <Button type="submit" disabled={saving || loading}>
+                            <div className="flex justify-end mt-3 sm:mt-4">
+                                <Button type="submit" disabled={saving || loading} className="w-full sm:w-auto">
                                     {saving ? t('common.saving') : t('profile.saveChanges')}
                                 </Button>
                             </div>
                         </form>
                     </Card>
 
-                    <Card>
-                        <div className="mb-4 pb-4 border-b border-gray-100 dark:border-gray-700">
-                            <h3 className="text-lg font-bold text-slate-900 dark:text-white">{t('profile.preferences')}</h3>
+                    <Card className="p-4 sm:p-6">
+                        <div className="mb-3 sm:mb-4 pb-3 sm:pb-4 border-b border-gray-100 dark:border-gray-700">
+                            <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">{t('profile.preferences')}</h3>
                         </div>
                         <form onSubmit={handleSave}>
-                            <div className="space-y-4">
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div className="space-y-3 sm:space-y-4">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('profile.language')}</label>
                                         <select
-                                            className="w-full px-4 py-3 bg-white dark:bg-gray-800 text-slate-900 dark:text-white border border-gray-200 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-4 focus:ring-sky-500/10 focus:border-sky-500 transition-all"
+                                            className="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-white dark:bg-gray-800 text-slate-900 dark:text-white border border-gray-200 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-4 focus:ring-sky-500/10 focus:border-sky-500 transition-all text-base sm:text-sm min-h-[44px]"
                                             value={formData.language}
                                             onChange={(e: ChangeEvent<HTMLSelectElement>) => {
                                                 const newLanguage = e.target.value;
@@ -242,9 +242,9 @@ const Profile: React.FC = () => {
                                         </select>
                                     </div>
                                     <div>
-                                        <label className="block text-sm font-semibold text-slate-700 dark:text-gray-300 mb-2">{t('profile.currency')}</label>
+                                        <label className="block text-sm font-semibold text-slate-700 dark:text-gray-300 mb-1 sm:mb-2">{t('profile.currency')}</label>
                                         <select
-                                            className="w-full px-4 py-3 bg-white dark:bg-gray-800 text-slate-900 dark:text-white border border-gray-200 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-4 focus:ring-sky-500/10 focus:border-sky-500 transition-all"
+                                            className="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-white dark:bg-gray-800 text-slate-900 dark:text-white border border-gray-200 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-4 focus:ring-sky-500/10 focus:border-sky-500 transition-all text-base sm:text-sm min-h-[44px]"
                                             value={formData.currency}
                                             onChange={(e: ChangeEvent<HTMLSelectElement>) => setFormData({ ...formData, currency: e.target.value })}
                                         >
@@ -255,9 +255,9 @@ const Profile: React.FC = () => {
                                     </div>
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-semibold text-slate-700 dark:text-gray-300 mb-2">{t('profile.theme')}</label>
+                                    <label className="block text-sm font-semibold text-slate-700 dark:text-gray-300 mb-1 sm:mb-2">{t('profile.theme')}</label>
                                     <select
-                                        className="w-full px-4 py-3 bg-white dark:bg-gray-800 text-slate-900 dark:text-white border border-gray-200 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-4 focus:ring-sky-500/10 focus:border-sky-500 transition-all"
+                                        className="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-white dark:bg-gray-800 text-slate-900 dark:text-white border border-gray-200 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-4 focus:ring-sky-500/10 focus:border-sky-500 transition-all text-base sm:text-sm min-h-[44px]"
                                         value={formData.theme}
                                         onChange={(e: ChangeEvent<HTMLSelectElement>) => {
                                             const newTheme = e.target.value;
@@ -279,8 +279,8 @@ const Profile: React.FC = () => {
                                     </p>
                                 </div>
                             </div>
-                            <div className="flex justify-end mt-6 pt-4 border-t border-gray-100 dark:border-gray-700">
-                                <Button type="submit" disabled={saving || loading}>
+                            <div className="flex justify-end mt-4 sm:mt-6 pt-3 sm:pt-4 border-t border-gray-100 dark:border-gray-700">
+                                <Button type="submit" disabled={saving || loading} className="w-full sm:w-auto">
                                     {saving ? t('common.saving') : t('profile.savePreferences')}
                                 </Button>
                             </div>

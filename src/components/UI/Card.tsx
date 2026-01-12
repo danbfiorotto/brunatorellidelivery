@@ -15,7 +15,7 @@ const Card: React.FC<CardProps> = ({ children, title, className, ...props }) => 
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.3 }}
             className={cn(
-                "bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 shadow-lg rounded-2xl p-6",
+                "bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 shadow-lg rounded-xl sm:rounded-2xl p-4 sm:p-6",
                 "hover:shadow-xl transition-all duration-300",
                 className
             )}

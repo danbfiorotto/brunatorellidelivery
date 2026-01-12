@@ -107,18 +107,18 @@ const Register: React.FC = () => {
             </div>
 
             {/* Right Side - Register Form */}
-            <div className="w-full lg:w-1/2 flex items-center justify-center p-8 relative">
+            <div className="w-full lg:w-1/2 flex items-center justify-center p-4 sm:p-6 md:p-8 relative">
                 <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-sky-100/50 dark:from-sky-900/30 via-transparent to-transparent"></div>
 
                 <motion.div
                     initial={{ opacity: 0, x: 20 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ duration: 0.5 }}
-                    className="w-full max-w-md space-y-8 relative z-10"
+                    className="w-full max-w-md space-y-6 sm:space-y-8 relative z-10"
                 >
                     <div className="text-center lg:text-left">
-                        <h2 className="text-3xl font-bold text-slate-900 dark:text-white">Criar Conta</h2>
-                        <p className="text-slate-500 dark:text-gray-400 mt-2">Preencha os dados abaixo para criar sua conta.</p>
+                        <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 dark:text-white">Criar Conta</h2>
+                        <p className="text-sm sm:text-base text-slate-500 dark:text-gray-400 mt-2">Preencha os dados abaixo para criar sua conta.</p>
                     </div>
 
                     {error && (
@@ -132,14 +132,14 @@ const Register: React.FC = () => {
                         </motion.div>
                     )}
 
-                    <form onSubmit={handleSubmit} className="space-y-6">
-                        <div className="space-y-4">
+                    <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
+                        <div className="space-y-3 sm:space-y-4">
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 dark:text-gray-300 mb-1.5">E-mail</label>
                                 <input
                                     type="email"
                                     required
-                                    className="w-full px-4 py-3 bg-white dark:bg-gray-800 text-slate-900 dark:text-white border border-slate-200 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-4 focus:ring-sky-500/10 focus:border-sky-500 transition-all"
+                                    className="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-white dark:bg-gray-800 text-slate-900 dark:text-white border border-slate-200 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-4 focus:ring-sky-500/10 focus:border-sky-500 transition-all text-base sm:text-sm min-h-[44px]"
                                     placeholder="seu@email.com"
                                     value={email}
                                     onChange={(e: ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)}
@@ -152,7 +152,7 @@ const Register: React.FC = () => {
                                     type="password"
                                     required
                                     minLength={6}
-                                    className="w-full px-4 py-3 bg-white dark:bg-gray-800 text-slate-900 dark:text-white border border-slate-200 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-4 focus:ring-sky-500/10 focus:border-sky-500 transition-all"
+                                    className="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-white dark:bg-gray-800 text-slate-900 dark:text-white border border-slate-200 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-4 focus:ring-sky-500/10 focus:border-sky-500 transition-all text-base sm:text-sm min-h-[44px]"
                                     placeholder="••••••••"
                                     value={password}
                                     onChange={(e: ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)}
@@ -166,7 +166,7 @@ const Register: React.FC = () => {
                                     type="password"
                                     required
                                     minLength={6}
-                                    className="w-full px-4 py-3 bg-white dark:bg-gray-800 text-slate-900 dark:text-white border border-slate-200 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-4 focus:ring-sky-500/10 focus:border-sky-500 transition-all"
+                                    className="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-white dark:bg-gray-800 text-slate-900 dark:text-white border border-slate-200 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-4 focus:ring-sky-500/10 focus:border-sky-500 transition-all text-base sm:text-sm min-h-[44px]"
                                     placeholder="••••••••"
                                     value={confirmPassword}
                                     onChange={(e: ChangeEvent<HTMLInputElement>) => setConfirmPassword(e.target.value)}

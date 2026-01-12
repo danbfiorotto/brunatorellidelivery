@@ -8,12 +8,14 @@ interface TableProps extends React.TableHTMLAttributes<HTMLTableElement> {
 
 export const Table: React.FC<TableProps> = ({ children, className, ...props }) => {
     return (
-        <div className="w-full overflow-x-auto rounded-2xl border border-white/40 dark:border-gray-700/40 shadow-lg bg-white/40 dark:bg-gray-800/40 backdrop-blur-md -mx-2 sm:mx-0">
+        <div className="w-full overflow-x-auto rounded-xl sm:rounded-2xl border border-white/40 dark:border-gray-700/40 shadow-lg bg-white/40 dark:bg-gray-800/40 backdrop-blur-md -mx-2 sm:mx-0 relative">
             <div className="min-w-full inline-block align-middle">
                 <table className={cn("w-full text-left text-sm min-w-[640px] sm:min-w-0", className)} {...props}>
                     {children}
                 </table>
             </div>
+            {/* Scroll indicator for mobile */}
+            <div className="sm:hidden absolute right-0 top-0 bottom-0 w-8 pointer-events-none bg-gradient-to-r from-transparent to-white/40 dark:to-gray-800/40 opacity-0 transition-opacity duration-300" id="table-scroll-indicator"></div>
         </div>
     );
 };
@@ -64,7 +66,7 @@ interface TableHeadProps extends React.ThHTMLAttributes<HTMLTableCellElement> {
 
 export const TableHead: React.FC<TableHeadProps> = ({ children, className, ...props }) => {
     return (
-        <th className={cn("px-3 sm:px-4 md:px-6 py-3 sm:py-4 text-xs sm:text-sm font-semibold text-slate-700 dark:text-gray-200 whitespace-nowrap", className)} {...props}>
+        <th className={cn("px-2 sm:px-3 md:px-4 lg:px-6 py-2 sm:py-3 md:py-4 text-xs sm:text-sm font-semibold text-slate-700 dark:text-gray-200 whitespace-nowrap", className)} {...props}>
             {children}
         </th>
     );
@@ -77,7 +79,7 @@ interface TableCellProps extends React.TdHTMLAttributes<HTMLTableCellElement> {
 
 export const TableCell: React.FC<TableCellProps> = ({ children, className, ...props }) => {
     return (
-        <td className={cn("px-3 sm:px-4 md:px-6 py-3 sm:py-4 text-slate-700 dark:text-gray-300 text-xs sm:text-sm", className)} {...props}>
+        <td className={cn("px-2 sm:px-3 md:px-4 lg:px-6 py-2 sm:py-3 md:py-4 text-slate-700 dark:text-gray-300 text-xs sm:text-sm", className)} {...props}>
             {children}
         </td>
     );

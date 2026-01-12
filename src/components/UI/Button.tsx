@@ -21,7 +21,8 @@ const Button: React.FC<ButtonProps> = ({ children, variant = 'primary', classNam
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
             className={cn(
-                "px-6 py-3 rounded-xl font-semibold transition-all duration-200 flex items-center justify-center gap-2",
+                "px-4 sm:px-6 py-2.5 sm:py-3 rounded-xl font-semibold transition-all duration-200 flex items-center justify-center gap-2",
+                "min-h-[44px] min-w-[44px] text-sm sm:text-base",
                 "disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100",
                 variants[variant],
                 className
