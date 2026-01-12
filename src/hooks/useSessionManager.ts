@@ -10,12 +10,22 @@ interface SessionManagerConfig {
     onSessionRefresh?: () => void;
     /** Callback quando a sessão expira */
     onSessionExpired?: () => void;
+    /** Callback para resetar estados travados (ex: isSubmitting) */
+    onResetStates?: () => void;
+    /** Callback para reobter instâncias de serviços após refresh */
+    onReinitializeServices?: () => void;
     /** Callback para resetar estados travados */
     onVisibilityChange?: (isVisible: boolean) => void;
+    /** Callback antes de página ser ocultada (pagehide) - para salvar estado e abortar requisições */
+    onPageHide?: () => void;
+    /** Callback quando página é restaurada do BFCache (pageshow com persisted=true) */
+    onPageRestored?: () => void;
     /** Intervalo de verificação de sessão (ms) */
     checkInterval?: number;
     /** Habilitar verificação em pageshow */
     enablePageShow?: boolean;
+    /** Habilitar handler de pagehide */
+    enablePageHide?: boolean;
 }
 
 /**
@@ -39,9 +49,14 @@ export function useSessionManager(config: SessionManagerConfig = {}) {
     const {
         onSessionRefresh,
         onSessionExpired,
+        onResetStates,
+        onReinitializeServices,
         onVisibilityChange,
+        onPageHide,
+        onPageRestored,
         checkInterval = 30000, // 30 segundos
         enablePageShow = true,
+        enablePageHide = true,
     } = config;
     
     const container = useDependencies();
@@ -80,6 +95,11 @@ export function useSessionManager(config: SessionManagerConfig = {}) {
                 try {
                     await authClient.refreshSession();
                     logger.debug('useSessionManager - Session refreshed');
+                    
+                    // Reobter serviços após refresh (podem ter tokens expirados)
+                    onReinitializeServices?.();
+                    
+                    // Notificar callback de refresh
                     onSessionRefresh?.();
                 } catch (error) {
                     logger.error(error, { context: 'useSessionManager.refreshSession' });
@@ -107,9 +127,13 @@ export function useSessionManager(config: SessionManagerConfig = {}) {
         
         // Verificar sessão ao voltar à página
         if (isVisible) {
+            // Resetar estados travados (ex: isSubmitting)
+            onResetStates?.();
+            
+            // Verificar e refresh sessão
             checkAndRefreshSession();
         }
-    }, [checkAndRefreshSession, onVisibilityChange]);
+    }, [checkAndRefreshSession, onVisibilityChange, onResetStates]);
     
     /**
      * Handler para pageshow (iOS PWA)
@@ -118,10 +142,20 @@ export function useSessionManager(config: SessionManagerConfig = {}) {
         // persisted = página restaurada do bfcache
         if (event.persisted) {
             logger.debug('useSessionManager - Page restored from bfcache');
+            
+            // Resetar estados travados
+            onResetStates?.();
+            
+            // Notificar que página foi restaurada
+            onPageRestored?.();
+            
+            // Verificar sessão
             checkAndRefreshSession();
+            
+            // Notificar mudança de visibilidade
             onVisibilityChange?.(true);
         }
-    }, [checkAndRefreshSession, onVisibilityChange]);
+    }, [checkAndRefreshSession, onVisibilityChange, onResetStates, onPageRestored]);
     
     /**
      * Handler para focus da janela
@@ -146,6 +180,19 @@ export function useSessionManager(config: SessionManagerConfig = {}) {
         checkAndRefreshSession();
     }, [checkAndRefreshSession]);
     
+    /**
+     * Handler para pagehide (antes de página ser descarregada ou minimizada)
+     * Importante para iOS Safari que pode congelar a página no BFCache
+     */
+    const handlePageHide = useCallback((event: PageTransitionEvent) => {
+        logger.debug('useSessionManager - Page hiding', { persisted: event.persisted });
+        
+        // Se a página vai para o BFCache, salvar estado e abortar requisições
+        if (event.persisted) {
+            onPageHide?.();
+        }
+    }, [onPageHide]);
+    
     // Setup de event listeners
     useEffect(() => {
         // Visibility change
@@ -154,6 +201,11 @@ export function useSessionManager(config: SessionManagerConfig = {}) {
         // Page show (iOS PWA)
         if (enablePageShow) {
             window.addEventListener('pageshow', handlePageShow);
+        }
+        
+        // Page hide (iOS Safari BFCache)
+        if (enablePageHide) {
+            window.addEventListener('pagehide', handlePageHide);
         }
         
         // Window focus
@@ -173,15 +225,21 @@ export function useSessionManager(config: SessionManagerConfig = {}) {
                 window.removeEventListener('pageshow', handlePageShow);
             }
             
+            if (enablePageHide) {
+                window.removeEventListener('pagehide', handlePageHide);
+            }
+            
             window.removeEventListener('focus', handleFocus);
             window.removeEventListener('online', handleOnline);
         };
     }, [
         handleVisibilityChange, 
-        handlePageShow, 
+        handlePageShow,
+        handlePageHide,
         handleFocus, 
         handleOnline,
         enablePageShow,
+        enablePageHide,
         checkAndRefreshSession
     ]);
     

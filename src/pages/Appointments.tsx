@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef, FormEvent, ChangeEvent, MouseEvent } from 'react';
-import { Plus, Calendar, DollarSign, User, Building2, Search, Clock, Edit2, Trash2, Upload, Mail, Phone, ArrowUp, ArrowDown } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback, FormEvent, ChangeEvent, MouseEvent } from 'react';
+import { Plus, Calendar, DollarSign, User, Building2, Search, Clock, Edit2, Trash2, Upload, Mail, Phone, ArrowUp, ArrowDown, Wifi, WifiOff } from 'lucide-react';
 import { motion, Variants } from 'framer-motion';
 import Card from '../components/UI/Card';
 import Button from '../components/UI/Button';
@@ -24,6 +24,10 @@ import { isValidImageUrl, sanitizeText } from '../lib/sanitize';
 import { logger } from '../lib/logger';
 import { IAuthClient } from '../infrastructure/auth/IAuthClient';
 import { AuthenticationError } from '../domain/errors/AppError';
+import { useSessionManager } from '../hooks/useSessionManager';
+import { useFormDraft } from '../hooks/useFormDraft';
+import { useOfflineQueue } from '../hooks/useOfflineQueue';
+import { withTimeout, TimeoutError, AbortedError } from '../lib/fetchWithTimeout';
 
 interface Patient {
     id: string;
@@ -69,7 +73,7 @@ interface Appointment {
     clinics?: Clinic | null;
 }
 
-interface AppointmentFormData {
+interface AppointmentFormData extends Record<string, unknown> {
     clinic_id: string;
     date: string;
     time: string;
@@ -172,7 +176,9 @@ const Appointments: React.FC = () => {
     const suggestionsRef = useRef<HTMLDivElement>(null);
     const [valueDisplay, setValueDisplay] = useState<string>('');
     const [validationErrors, setValidationErrors] = useState<ValidationErrors>({});
-    const [formData, setFormData] = useState<AppointmentFormData>({
+    
+    // Estado inicial do formulário
+    const initialFormData: AppointmentFormData = {
         clinic_id: '',
         date: '',
         time: '',
@@ -183,7 +189,7 @@ const Appointments: React.FC = () => {
         procedure: '',
         custom_procedure: '',
         value: '',
-        currency: 'BRL',
+        currency: currency || 'BRL',
         payment_type: '100',
         payment_percentage: '',
         is_paid: false,
@@ -191,6 +197,92 @@ const Appointments: React.FC = () => {
         clinical_evolution: '',
         notes: '',
         radiographs: []
+    };
+    
+    const [formData, setFormDataState] = useState<AppointmentFormData>(initialFormData);
+    
+    // Persistência de rascunho do formulário
+    const formDraft = useFormDraft<AppointmentFormData>({
+        key: editingAppointment ? `appointment_edit_${editingAppointment.id}` : 'appointment_create',
+        initialData: initialFormData,
+        enabled: isModalOpen,
+        onRestore: (restoredData) => {
+            logger.debug('Appointments - Form draft restored', { data: restoredData });
+            setFormDataState(restoredData);
+        },
+    });
+    
+    // Wrapper para atualizar formData e rascunho simultaneamente
+    const setFormData = useCallback((data: AppointmentFormData | ((prev: AppointmentFormData) => AppointmentFormData)) => {
+        setFormDataState((prev: AppointmentFormData) => {
+            const newData = typeof data === 'function' ? (data as (prev: AppointmentFormData) => AppointmentFormData)(prev) : data;
+            // Atualizar rascunho automaticamente
+            formDraft.setData(newData);
+            return newData;
+        });
+    }, [formDraft]);
+    
+    // AbortControllers para requisições pendentes
+    const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
+    
+    // Upload de radiografias será feito após criar o appointment
+    // Mantemos os File objects no formData para upload posterior
+    
+    // Fila offline
+    const offlineQueue = useOfflineQueue({
+        syncCreate: async (operation) => {
+            const data = operation.data as CreateAppointmentDTO;
+            await appointmentService.create(data, true);
+        },
+        syncUpdate: async (operation) => {
+            const { id, data } = operation.data as { id: string; data: CreateAppointmentDTO };
+            await appointmentService.update(id, data);
+        },
+        onSynced: () => {
+            showSuccess('Atendimento sincronizado com sucesso!');
+            loadData();
+            loadTotalStats();
+        },
+    });
+    
+    // Gerenciamento de sessão e visibilidade
+    useSessionManager({
+        onResetStates: () => {
+            logger.debug('Appointments - Resetting states on visibility change');
+            setIsSubmitting(false);
+        },
+        onReinitializeServices: () => {
+            logger.debug('Appointments - Reinitializing services after session refresh');
+            // Os serviços são obtidos via container.resolve, então não precisam ser reobtidos
+            // Mas podemos forçar refresh de dados
+            loadData().catch(err => logger.error(err, { context: 'loadData after session refresh' }));
+        },
+        onPageHide: () => {
+            logger.debug('Appointments - Page hiding, aborting requests and saving draft');
+            // Abortar todas as requisições pendentes
+            abortControllersRef.current.forEach((controller, key) => {
+                if (!controller.signal.aborted) {
+                    controller.abort();
+                    logger.debug('Appointments - Request aborted', { key });
+                }
+            });
+            abortControllersRef.current.clear();
+            
+            // Salvar rascunho
+            formDraft.forceSave();
+        },
+        onPageRestored: () => {
+            logger.debug('Appointments - Page restored from BFCache');
+            // Restaurar rascunho
+            formDraft.restoreDraft();
+            
+            // Revalidar formulário
+            if (formRef.current) {
+                requestAnimationFrame(() => {
+                    formRef.current?.reportValidity();
+                });
+            }
+        },
     });
 
     // Função para carregar totais de todos os appointments via RPC (otimizado)
@@ -575,7 +667,7 @@ const Appointments: React.FC = () => {
             setEditingAppointment(appointment);
             // Check if procedure exists in the list, if not, set to "outros" and fill custom_procedure
             const procedureExists = procedures.some((p: Procedure) => p.name === appointment.procedure);
-            setFormData({
+            const editFormData: AppointmentFormData = {
                 clinic_id: appointment.clinic_id || '',
                 date: appointment.date || '',
                 time: appointment.time || '',
@@ -586,15 +678,19 @@ const Appointments: React.FC = () => {
                 procedure: procedureExists ? appointment.procedure : 'outros',
                 custom_procedure: procedureExists ? '' : appointment.procedure || '',
                 value: appointment.value ? String(appointment.value.amount) : '',
-                currency: appointment.value.currency || 'BRL',
-                payment_type: appointment.paymentType.type || '100',
-                payment_percentage: appointment.paymentType.percentage ? String(appointment.paymentType.percentage) : '',
+                currency: appointment.value?.currency || 'BRL',
+                payment_type: appointment.paymentType?.type || '100',
+                payment_percentage: appointment.paymentType?.percentage ? String(appointment.paymentType.percentage) : '',
                 is_paid: appointment.is_paid || appointment.status === 'paid',
                 payment_date: appointment.payment_date || '',
                 clinical_evolution: appointment.clinical_evolution || '',
                 notes: appointment.notes || '',
                 radiographs: []
-            });
+            };
+            
+            setFormData(editFormData);
+            formDraft.setData(editFormData);
+            
             // Set formatted value display for editing
             if (appointment.value) {
                 const numValue = appointment.value.amount;
@@ -606,26 +702,14 @@ const Appointments: React.FC = () => {
             }
         } else {
             setEditingAppointment(null);
-            setFormData({
-                clinic_id: '',
-                date: '',
-                time: '',
-                patient_name: '',
-                patient_phone: '',
-                patient_email: '',
-                patient_id: '',
-                procedure: '',
-                custom_procedure: '',
-                value: '',
-                currency: currency,
-                payment_type: '100',
-                payment_percentage: '',
-                is_paid: false,
-                payment_date: '',
-                clinical_evolution: '',
-                notes: '',
-                radiographs: []
-            });
+            // Tentar restaurar rascunho se houver
+            if (formDraft.hasDraft()) {
+                formDraft.restoreDraft();
+            } else {
+                const newFormData = { ...initialFormData, currency: currency || 'BRL' };
+                setFormData(newFormData);
+                formDraft.setData(newFormData);
+            }
             setValueDisplay('');
         }
         setIsModalOpen(true);
@@ -649,6 +733,11 @@ const Appointments: React.FC = () => {
         });
         
         setIsSubmitting(true);
+        
+        // Criar AbortController para esta operação
+        const operationId = `save_${Date.now()}`;
+        const abortController = new AbortController();
+        abortControllersRef.current.set(operationId, abortController);
         
         try {
             // Prepare data for validation
@@ -746,15 +835,68 @@ const Appointments: React.FC = () => {
                 notes: dataToSave.notes
             });
             
+            // Verificar conectividade ANTES de tentar salvar
+            if (!offlineQueue.isOnline) {
+                showWarning('Você está offline. O atendimento será salvo localmente e sincronizado quando houver conexão.');
+                
+                // Salvar na fila offline
+                const isEditing = !!editingAppointment;
+                if (isEditing) {
+                    await offlineQueue.queueOperation('update', 'appointment', {
+                        id: editingAppointment.id,
+                        data: dataToSave
+                    });
+                } else {
+                    await offlineQueue.queueOperation('create', 'appointment', dataToSave);
+                }
+                
+                // Limpar rascunho e fechar modal
+                formDraft.clearDraft();
+                setIsModalOpen(false);
+                setIsSubmitting(false);
+                abortControllersRef.current.delete(operationId);
+                return;
+            }
+            
+            // Revalidar sessão ANTES de tentar salvar (preventivo)
+            try {
+                const authClient = container.resolve<IAuthClient>('authClient');
+                const session = await authClient.getSession();
+                
+                if (!session?.user) {
+                    logger.warn('No session found, attempting refresh');
+                    showWarning('Sua sessão expirou. Renovando automaticamente...');
+                    
+                    const refreshed = await authClient.refreshSession();
+                    if (!refreshed) {
+                        throw new Error('Não foi possível renovar a sessão. Por favor, faça login novamente.');
+                    }
+                    
+                    showSuccess('Sessão renovada com sucesso!');
+                }
+            } catch (sessionError) {
+                logger.error(sessionError, { context: 'performSubmit.sessionValidation' });
+                showError('Erro ao validar sessão. Por favor, tente novamente.');
+                setIsSubmitting(false);
+                abortControllersRef.current.delete(operationId);
+                return;
+            }
+            
             // Save radiographs array temporarily
+            // Incluir todas as radiografias (serão enviadas após criar appointment)
             const radiographsToSave = formData.radiographs || [];
             
             let appointmentId: string;
             let patientId: string | null;
             const isEditing = !!editingAppointment;
             
-            // Função auxiliar para tentar criar/atualizar com retry em caso de erro de autenticação
-            const attemptSave = async (): Promise<{ appointmentId: string; patientId: string | null }> => {
+            // Função auxiliar para tentar criar/atualizar com timeout e AbortController
+            const attemptSave = async (signal: AbortSignal): Promise<{ appointmentId: string; patientId: string | null }> => {
+                // Verificar se foi abortado antes de começar
+                if (signal.aborted) {
+                    throw new AbortedError('Operação foi cancelada');
+                }
+                
                 if (isEditing) {
                     logger.debug('Updating appointment', { appointmentId: editingAppointment!.id });
                     const updated = await appointmentService.update(editingAppointment!.id, dataToSave);
@@ -770,10 +912,45 @@ const Appointments: React.FC = () => {
             };
 
             try {
-                const result = await attemptSave();
+                            // Envolver com timeout e AbortController
+                const result = await withTimeout(
+                    async (signal) => {
+                        if (signal.aborted) {
+                            throw new AbortedError('Operação foi cancelada');
+                        }
+                        return await attemptSave(signal);
+                    },
+                    {
+                        timeout: 30000, // 30 segundos
+                        abortController,
+                        onTimeout: () => {
+                            showWarning('A operação está demorando mais que o esperado...');
+                        },
+                        onAbort: () => {
+                            logger.debug('Save operation aborted');
+                        }
+                    }
+                );
+                
                 appointmentId = result.appointmentId;
                 patientId = result.patientId;
             } catch (saveError) {
+                // Limpar AbortController
+                abortControllersRef.current.delete(operationId);
+                
+                // Tratar erros específicos
+                if (saveError instanceof AbortedError) {
+                    logger.debug('Save operation was aborted');
+                    setIsSubmitting(false);
+                    return;
+                }
+                
+                if (saveError instanceof TimeoutError) {
+                    logger.error(saveError, { context: 'performSubmit.timeout' });
+                    showError('A operação demorou muito. Por favor, tente novamente.');
+                    setIsSubmitting(false);
+                    return;
+                }
                 // Verificar se é erro de autenticação
                 const errorMessage = saveError instanceof Error ? saveError.message : String(saveError);
                 const isAuthError = saveError instanceof AuthenticationError || 
@@ -792,16 +969,37 @@ const Appointments: React.FC = () => {
                         
                         if (refreshedSession) {
                             logger.debug('Session refreshed successfully, retrying save operation');
-                            // Tentar novamente após renovar sessão
-                            const result = await attemptSave();
+                            
+                            // Criar novo AbortController para retry
+                            const retryController = new AbortController();
+                            abortControllersRef.current.set(`${operationId}_retry`, retryController);
+                            
+                            // Tentar novamente após renovar sessão com timeout
+                            const result = await withTimeout(
+                                async (signal) => {
+                                    if (signal.aborted) {
+                                        throw new AbortedError('Operação foi cancelada');
+                                    }
+                                    return await attemptSave(signal);
+                                },
+                                {
+                                    timeout: 30000,
+                                    abortController: retryController,
+                                }
+                            );
+                            
                             appointmentId = result.appointmentId;
                             patientId = result.patientId;
+                            
+                            abortControllersRef.current.delete(`${operationId}_retry`);
                         } else {
                             throw new Error('Não foi possível renovar a sessão. Por favor, faça login novamente.');
                         }
                     } catch (refreshError) {
                         logger.error(refreshError, { context: 'sessionRefresh' });
-                        throw new Error('Sua sessão expirou. Por favor, faça login novamente.');
+                        showError('Sua sessão expirou. Por favor, faça login novamente.');
+                        setIsSubmitting(false);
+                        return;
                     }
                 } else {
                     // Se não for erro de autenticação, propagar o erro normalmente
@@ -809,69 +1007,61 @@ const Appointments: React.FC = () => {
                 }
             }
             
-            // Save radiographs if any were uploaded
+            // Limpar AbortController após sucesso
+            abortControllersRef.current.delete(operationId);
+            
+            // Associar radiografias já enviadas ao appointment
+            // Fazer upload de radiografias após criar/atualizar appointment
+            // Usar apenas File objects (não URLs já salvas, pois não temos patientId antes)
             if (radiographsToSave.length > 0 && patientId) {
                 try {
-                    for (const radiograph of radiographsToSave) {
-                        // Use the File object directly if available, otherwise convert from data URL
+                    // Filtrar apenas radiografias com File objects
+                    const filesToUpload = radiographsToSave.filter((r: RadiographPreview) => r.file);
+                    
+                    for (const radiograph of filesToUpload) {
                         if (radiograph.file) {
-                            // Direct file upload to Storage
-                            await radiographService.uploadRadiograph(
-                                patientId,
-                                appointmentId,
-                                radiograph.file
-                            );
-                        } else if (radiograph.url && radiograph.url.startsWith('data:')) {
-                            // Legacy: Convert data URL to File
-                            const response = await fetch(radiograph.url);
-                            const blob = await response.blob();
-                            const file = new File([blob], radiograph.name, { type: blob.type });
-                            
-                            await radiographService.uploadRadiograph(
-                                patientId,
-                                appointmentId,
-                                file
-                            );
-                        } else {
-                            // Already a URL (shouldn't happen, but handle it)
-                            await radiographService.uploadRadiograph(
-                                patientId,
-                                appointmentId,
-                                radiograph.url,
-                                radiograph.name,
-                                radiograph.size
+                            // Upload com timeout e AbortController
+                            await withTimeout(
+                                async (signal) => {
+                                    if (signal.aborted) {
+                                        throw new AbortedError('Upload cancelado');
+                                    }
+                                    
+                                    await radiographService.uploadRadiograph(
+                                        patientId,
+                                        appointmentId,
+                                        radiograph.file!
+                                    );
+                                },
+                                {
+                                    timeout: 60000, // 60s para uploads
+                                    abortController,
+                                    onTimeout: () => {
+                                        logger.warn('Radiograph upload timeout', { fileName: radiograph.name });
+                                    },
+                                }
                             );
                         }
                     }
                 } catch (radiographError) {
                     logger.error(radiographError, { context: 'saveRadiographs' });
                     // Don't fail the whole operation if radiographs fail
-                    showWarning(t('appointments.radiographsError') + ': ' + (radiographError as Error).message);
+                    if (radiographError instanceof TimeoutError) {
+                        showWarning('Upload de radiografias demorou muito, mas o atendimento foi salvo.');
+                    } else if (radiographError instanceof AbortedError) {
+                        logger.debug('Radiograph upload was aborted');
+                    } else {
+                        showWarning(t('appointments.radiographsError') + ': ' + (radiographError as Error).message);
+                    }
                 }
             }
             
+            // Limpar rascunho após salvamento bem-sucedido
+            formDraft.clearDraft();
+            
             // Fechar modal e limpar formulário ANTES de recarregar dados
             setIsModalOpen(false);
-            setFormData({
-                clinic_id: '',
-                date: '',
-                time: '',
-                patient_name: '',
-                patient_phone: '',
-                patient_email: '',
-                patient_id: '',
-                procedure: '',
-                custom_procedure: '',
-                value: '',
-                currency: currency,
-                payment_type: '100',
-                payment_percentage: '',
-                is_paid: false,
-                payment_date: '',
-                clinical_evolution: '',
-                notes: '',
-                radiographs: []
-            });
+            setFormData(initialFormData);
             setEditingAppointment(null);
             setValidationErrors({});
             
@@ -897,16 +1087,28 @@ const Appointments: React.FC = () => {
             }, 100);
             
         } catch (error) {
+            // Limpar AbortController em caso de erro
+            abortControllersRef.current.delete(operationId);
+            
             logger.error(error, { context: 'saveAppointment' });
             
             // Sempre resetar estado, mesmo em caso de erro
             setIsSubmitting(false);
             
-            try {
-                handleError(error, 'Appointments.saveAppointment');
-            } catch (handleErrorException) {
-                // Se handleError lançar uma exceção, logar mas não falhar
-                logger.error(handleErrorException, { context: 'handleError in saveAppointment' });
+            // Tratar erros específicos com mensagens claras
+            if (error instanceof TimeoutError) {
+                showError('A operação demorou muito. Por favor, verifique sua conexão e tente novamente.');
+            } else if (error instanceof AbortedError) {
+                logger.debug('Save operation was aborted');
+                // Não mostrar erro se foi abortado intencionalmente
+            } else {
+                try {
+                    handleError(error, 'Appointments.saveAppointment');
+                } catch (handleErrorException) {
+                    // Se handleError lançar uma exceção, logar mas não falhar
+                    logger.error(handleErrorException, { context: 'handleError in saveAppointment' });
+                    showError('Erro ao salvar atendimento. Por favor, tente novamente.');
+                }
             }
         }
     };
@@ -983,24 +1185,32 @@ const Appointments: React.FC = () => {
             setUploadingFiles(true);
             const filePreviews: RadiographPreview[] = [];
             
-            // Create previews for display (using data URLs for preview)
+            // Criar previews e iniciar upload otimista imediatamente
             for (const file of validFiles) {
                 const reader = new FileReader();
                 await new Promise<void>((resolve, reject) => {
                     reader.onloadend = () => {
+                        const previewUrl = reader.result as string;
+                        
+                        // Adicionar preview imediatamente
                         filePreviews.push({
-                            file: file, // Keep the original File object for upload
-                            url: reader.result as string, // Data URL for preview
+                            file: file, // Manter File object para upload otimista
+                            url: previewUrl, // Data URL para preview
                             name: file.name,
                             size: file.size
                         });
+                        
                         resolve();
                     };
                     reader.onerror = reject;
                     reader.readAsDataURL(file);
                 });
+                
+                // O upload será feito após criar o appointment (quando tivermos patientId)
+                // Por enquanto, apenas armazenamos o File object para upload posterior
             }
 
+            // Atualizar formData com previews
             setFormData({
                 ...formData,
                 radiographs: [...(formData.radiographs || []), ...filePreviews]
@@ -1946,40 +2156,78 @@ const Appointments: React.FC = () => {
                         </div>
                     </div>
 
-                    <div className="flex justify-end gap-3 pt-4 border-t border-gray-100 dark:border-gray-700">
-                        <Button 
-                            type="button" 
-                            variant="secondary" 
-                            onClick={() => setIsModalOpen(false)}
-                        >
-                            {t('appointments.cancel')}
-                        </Button>
-                        <Button 
-                            type="button"
-                            disabled={isSubmitting}
-                            onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                
-                                // Verifica validação HTML5 antes de submeter
-                                if (formRef.current && !formRef.current.checkValidity()) {
-                                    requestAnimationFrame(() => {
-                                        formRef.current!.reportValidity();
-                                    });
-                                    return;
+                    <div className="flex flex-col gap-3 pt-4 border-t border-gray-100 dark:border-gray-700">
+                        {/* Indicador de conectividade e operações pendentes */}
+                        <div className="flex items-center justify-between text-xs">
+                            <div className="flex items-center gap-2">
+                                {offlineQueue.isOnline ? (
+                                    <div className="flex items-center gap-1 text-green-600 dark:text-green-400">
+                                        <Wifi size={14} />
+                                        <span>Online</span>
+                                    </div>
+                                ) : (
+                                    <div className="flex items-center gap-1 text-orange-600 dark:text-orange-400">
+                                        <WifiOff size={14} />
+                                        <span>Offline - Salvando localmente</span>
+                                    </div>
+                                )}
+                            </div>
+                            {offlineQueue.pendingCount > 0 && (
+                                <div className="text-xs text-sky-600 dark:text-sky-400">
+                                    {offlineQueue.pendingCount} {offlineQueue.pendingCount === 1 ? 'operação' : 'operações'} pendente{offlineQueue.pendingCount > 1 ? 's' : ''}
+                                </div>
+                            )}
+                        </div>
+                        
+                        <div className="flex justify-end gap-3">
+                            <Button 
+                                type="button" 
+                                variant="secondary" 
+                                onClick={() => {
+                                    setIsModalOpen(false);
+                                }}
+                            >
+                                {t('appointments.cancel')}
+                            </Button>
+                            <Button 
+                                type="button"
+                                disabled={isSubmitting || (!offlineQueue.isOnline && offlineQueue.isSyncing)}
+                                onClick={(e: MouseEvent<HTMLButtonElement>) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    
+                                    // Verifica validação HTML5 antes de submeter
+                                    if (formRef.current && !formRef.current.checkValidity()) {
+                                        requestAnimationFrame(() => {
+                                            formRef.current!.reportValidity();
+                                        });
+                                        return;
+                                    }
+                                    
+                                    // Tentar usar requestSubmit como fallback (melhor para iOS)
+                                    if (formRef.current) {
+                                        try {
+                                            formRef.current.requestSubmit();
+                                        } catch {
+                                            // Se requestSubmit falhar, chamar diretamente
+                                            performSubmit();
+                                        }
+                                    } else {
+                                        // Chama performSubmit diretamente
+                                        performSubmit();
+                                    }
+                                }}
+                            >
+                                {isSubmitting 
+                                    ? (offlineQueue.isOnline 
+                                        ? (t('common.saving') || 'Salvando...')
+                                        : 'Salvando localmente...')
+                                    : editingAppointment 
+                                        ? t('appointments.saveChanges') 
+                                        : t('appointments.saveAppointment')
                                 }
-                                
-                                // Chama performSubmit diretamente
-                                performSubmit();
-                            }}
-                        >
-                            {isSubmitting 
-                                ? t('common.saving') || 'Salvando...' 
-                                : editingAppointment 
-                                    ? t('appointments.saveChanges') 
-                                    : t('appointments.saveAppointment')
-                            }
-                        </Button>
+                            </Button>
+                        </div>
                     </div>
                 </form>
             </Modal>
