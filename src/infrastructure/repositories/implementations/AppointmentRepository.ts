@@ -320,11 +320,23 @@ export class AppointmentRepository extends BaseRepository implements IAppointmen
                 
                 // Usar toJSON() da entidade
                 const appointmentData = appointment.toJSON();
-                appointmentData.user_id = session.user.id; // Garantir user_id
+                
+                // ✅ Remover updated_at se existir (a tabela appointments não tem essa coluna)
+                const { updated_at, user_id, ...dataToInsert } = appointmentData as any;
+                
+                logger.debug('AppointmentRepository.create - Inserting data', { 
+                    dataKeys: Object.keys(dataToInsert),
+                    hasUpdatedAt: 'updated_at' in appointmentData,
+                    appointmentId: appointmentData.id
+                });
                 
                 const created = await this.query()
-                    .insert([appointmentData])
+                    .insert([dataToInsert])
                     .then(res => (Array.isArray(res) ? res[0] : res) as AppointmentJSON);
+                
+                logger.debug('AppointmentRepository.create - Created successfully', { 
+                    appointmentId: created?.id 
+                });
                 
                 return created;
             },
@@ -350,10 +362,23 @@ export class AppointmentRepository extends BaseRepository implements IAppointmen
                 // Usar toJSON() da entidade
                 const appointmentData = appointment.toJSON();
                 
+                // ✅ Remover updated_at se existir (a tabela appointments não tem essa coluna)
+                const { updated_at, ...dataToUpdate } = appointmentData as any;
+                
+                logger.debug('AppointmentRepository.update - Updating data', { 
+                    appointmentId: id,
+                    dataKeys: Object.keys(dataToUpdate),
+                    hasUpdatedAt: 'updated_at' in appointmentData
+                });
+                
                 const updated = await this.query()
                     .where('id', id)
-                    .update(appointmentData)
+                    .update(dataToUpdate)
                     .then(res => (Array.isArray(res) ? res[0] : res) as AppointmentJSON);
+                
+                logger.debug('AppointmentRepository.update - Updated successfully', { 
+                    appointmentId: id 
+                });
                 
                 return updated;
             },
