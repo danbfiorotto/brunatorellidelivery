@@ -705,14 +705,14 @@ const Appointments: React.FC = () => {
         const validation = validateAppointment(dataToValidate, { allowPastDates: true });
         if (!validation.isValid) {
             setValidationErrors(validation.errors);
+            setIsSubmitting(false);
             return;
         }
         
         // Clear validation errors
         setValidationErrors({});
         
-        try {
-            // Handle custom procedure if "Outros" was selected
+        // Handle custom procedure if "Outros" was selected
             let finalProcedure = formData.procedure;
             if (formData.procedure === 'outros' && formData.custom_procedure.trim()) {
                 const customProcedureName = formData.custom_procedure.trim();
