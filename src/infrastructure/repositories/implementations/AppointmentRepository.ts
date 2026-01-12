@@ -324,10 +324,35 @@ export class AppointmentRepository extends BaseRepository implements IAppointmen
                 // ✅ Remover updated_at se existir (a tabela appointments não tem essa coluna)
                 const { updated_at, user_id, ...dataToInsert } = appointmentData as any;
                 
+                // Obter user_id do patient relacionado se necessário
+                let finalUserId = user_id || session?.user?.id;
+                if (!finalUserId && appointment.patientId) {
+                    try {
+                        const patient = await this.db.table('patients')
+                            .select('user_id')
+                            .where('id', appointment.patientId)
+                            .maybeSingle()
+                            .execute<{ user_id: string }>();
+                        finalUserId = patient?.user_id;
+                    } catch (error) {
+                        logger.warn('Failed to fetch user_id from patient', { 
+                            patientId: appointment.patientId, 
+                            error 
+                        });
+                    }
+                }
+                
+                // Adicionar user_id se a tabela precisar (mesmo que não esteja no schema.sql, o banco pode ter)
+                if (finalUserId) {
+                    (dataToInsert as any).user_id = finalUserId;
+                }
+                
                 logger.debug('AppointmentRepository.create - Inserting data', { 
                     dataKeys: Object.keys(dataToInsert),
                     hasUpdatedAt: 'updated_at' in appointmentData,
-                    appointmentId: appointmentData.id
+                    appointmentId: appointmentData.id,
+                    hasUserId: 'user_id' in dataToInsert,
+                    userId: (dataToInsert as any).user_id
                 });
                 
                 const created = await this.query()
