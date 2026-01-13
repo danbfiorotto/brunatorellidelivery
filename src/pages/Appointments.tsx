@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, FormEvent, ChangeEvent, MouseEvent } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo, FormEvent, ChangeEvent, MouseEvent } from 'react';
 import { Plus, Calendar, DollarSign, User, Building2, Search, Clock, Edit2, Trash2, Upload, Mail, Phone, ArrowUp, ArrowDown, Wifi, WifiOff } from 'lucide-react';
 import { motion, Variants } from 'framer-motion';
 import Card from '../components/UI/Card';
@@ -164,6 +164,14 @@ const Appointments: React.FC = () => {
     });
     const [sortColumn, setSortColumn] = useState<SortColumn>('date');
     const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+    
+    // Memoizar chave de filtros para evitar loops no useEffect
+    // Isso garante que o useEffect só roda quando filtros realmente mudam
+    const filtersKey = useMemo(
+        () => JSON.stringify({ filterStatus, sortColumn, sortDirection }),
+        [filterStatus, sortColumn, sortDirection]
+    );
+    
     const [editingAppointment, setEditingAppointment] = useState<Appointment | null>(null);
     const [uploadingFiles, setUploadingFiles] = useState<boolean>(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -303,6 +311,9 @@ const Appointments: React.FC = () => {
     // AbortControllers para requisições pendentes
     const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
     
+    // Ref para prevenir loadData duplicado (singleflight)
+    const loadDataInFlightRef = useRef<Promise<void> | null>(null);
+    
     // Upload de radiografias será feito após criar o appointment
     // Mantemos os File objects no formData para upload posterior
     
@@ -324,16 +335,19 @@ const Appointments: React.FC = () => {
     });
     
     // Gerenciamento de sessão e visibilidade
-    const { initialCheckPromise } = useSessionManager({
+    // IMPORTANTE: NÃO resetar estados do form/modal no visibilitychange
+    // Isso causa o bug de "não salva após minimizar" porque o estado fica inconsistente
+    const { sessionReady, checkSession } = useSessionManager({
         onResetStates: () => {
-            logger.debug('Appointments - Resetting states on visibility change');
-            setIsSubmitting(false);
+            // Apenas resetar isSubmitting se realmente necessário (não resetar form/modal)
+            // O draft já preserva os dados do formulário
+            logger.debug('Appointments - Visibility changed, only resetting isSubmitting if stuck');
+            // Não resetar automaticamente - apenas se realmente travado (timeout já cuida disso)
         },
         onReinitializeServices: () => {
             logger.debug('Appointments - Reinitializing services after session refresh');
             // Os serviços são obtidos via container.resolve, então não precisam ser reobtidos
-            // Mas podemos forçar refresh de dados
-            loadData().catch(err => logger.error(err, { context: 'loadData after session refresh' }));
+            // NÃO chamar loadData aqui para evitar loops - o gate sessionReady já controla quando carregar
         },
         onPageHide: () => {
             const timestamp = Date.now();
@@ -571,29 +585,49 @@ const Appointments: React.FC = () => {
         const abortController = new AbortController();
         
         const loadDataAfterSessionCheck = async (): Promise<void> => {
-            // Aguardar verificação inicial de sessão antes de carregar dados
+            // Aguardar sessão estar pronta antes de carregar dados
             // Isso garante que a sessão está válida antes de fazer requisições
-            if (initialCheckPromise) {
-                logger.info('Appointments - Waiting for initial session check before loading data', {
+            if (!sessionReady) {
+                logger.info('Appointments - Waiting for session to be ready before loading data', {
+                    timestamp: Date.now()
+                });
+                // Não carregar dados até sessão estar pronta
+                return;
+            }
+            
+            // Se já existe um loadData em andamento, aguardar ele (singleflight)
+            if (loadDataInFlightRef.current) {
+                logger.debug('Appointments - loadData already in progress, awaiting existing load', {
                     timestamp: Date.now()
                 });
                 try {
-                    await initialCheckPromise;
-                    logger.info('Appointments - Session check completed, proceeding with data load', {
-                        timestamp: Date.now()
-                    });
+                    await loadDataInFlightRef.current;
                 } catch (error) {
-                    logger.warn('Appointments - Session check failed, but proceeding with data load', {
-                        error,
+                    // Ignorar erros do load anterior
+                    logger.debug('Appointments - Previous loadData had error (ignored)', {
                         timestamp: Date.now()
                     });
-                    // Continuar mesmo se verificação de sessão falhar
                 }
+                return;
             }
             
-            // Agora carregar dados após sessão ser confirmada
-            if (abortController.signal.aborted) return;
-            await loadDataAsync(pagination.page);
+            logger.info('Appointments - Session ready, proceeding with data load', {
+                timestamp: Date.now()
+            });
+            
+            // Criar Promise de loadData e armazenar no ref
+            const loadPromise = (async () => {
+                try {
+                    if (abortController.signal.aborted) return;
+                    await loadDataAsync(pagination.page);
+                } finally {
+                    // Sempre limpar o ref, mesmo em caso de erro
+                    loadDataInFlightRef.current = null;
+                }
+            })();
+            
+            loadDataInFlightRef.current = loadPromise;
+            await loadPromise;
         };
         
         const loadDataAsync = async (page: number = pagination.page): Promise<void> => {
@@ -722,7 +756,7 @@ const Appointments: React.FC = () => {
             abortController.abort();
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [pagination.page, filterStatus, sortColumn, sortDirection, initialCheckPromise]);
+    }, [pagination.page, filtersKey, sessionReady]);
 
     // Close suggestions when clicking outside
     useEffect(() => {
@@ -1121,39 +1155,11 @@ const Appointments: React.FC = () => {
                 return;
             }
             
-            // Revalidar sessão ANTES de tentar salvar (preventivo)
+            // Revalidar sessão ANTES de tentar salvar usando checkSession (singleflight + throttle)
             try {
                 logger.info('performSubmit - Validating session', { timestamp: Date.now() });
-                const authClient = container.resolve<IAuthClient>('authClient');
-                const session = await authClient.getSession();
-                
-                if (!session?.user) {
-                    logger.warn('performSubmit - No session found, attempting refresh', { timestamp: Date.now() });
-                    showWarning('Sua sessão expirou. Renovando automaticamente...');
-                    
-                    const refreshed = await authClient.refreshSession();
-                    if (!refreshed) {
-                        throw new Error('Não foi possível renovar a sessão. Por favor, faça login novamente.');
-                    }
-                    
-                    logger.info('performSubmit - Session refreshed successfully', { timestamp: Date.now() });
-                    
-                    // Reobter serviços após refresh para garantir que usam o novo token
-                    const refreshedAppointmentService = container.resolve('appointmentService');
-                    const refreshedRadiographService = container.resolve('radiographService');
-                    
-                    // Atualizar referências locais se necessário
-                    // (Os serviços são obtidos via container.resolve, mas garantimos que estão atualizados)
-                    logger.info('performSubmit - Services reinitialized after session refresh', {
-                        timestamp: Date.now(),
-                        hasAppointmentService: !!refreshedAppointmentService,
-                        hasRadiographService: !!refreshedRadiographService
-                    });
-                    
-                    showSuccess('Sessão renovada com sucesso!');
-                } else {
-                    logger.debug('performSubmit - Session valid', { timestamp: Date.now() });
-                }
+                await checkSession(true); // Forçar verificação antes de salvar
+                logger.info('performSubmit - Session validated', { timestamp: Date.now() });
             } catch (sessionError) {
                 logger.error('performSubmit - Session validation failed', {
                     error: sessionError,
@@ -1232,13 +1238,13 @@ const Appointments: React.FC = () => {
                         return await attemptSave(signal);
                     },
                     {
-                        timeout: 30000, // 30 segundos
+                        timeout: 8000, // 8 segundos (timeout curto para evitar travamentos)
                         abortController,
                         onTimeout: () => {
                             logger.warn('performSubmit - Operation timeout warning', {
                                 timestamp: Date.now(),
                                 operationId,
-                                timeoutMs: 30000
+                                timeoutMs: 8000
                             });
                             showWarning('A operação está demorando mais que o esperado...');
                         },
@@ -1289,45 +1295,56 @@ const Appointments: React.FC = () => {
                     errorMessage.includes('401');
                 
                 if (isAuthError) {
-                    logger.warn('Authentication error detected, attempting to refresh session', { error: saveError });
+                    logger.warn('performSubmit - Authentication error detected, attempting retry with session refresh', {
+                        error: saveError,
+                        timestamp: Date.now()
+                    });
                     
                     try {
-                        // Tentar renovar sessão
-                        const authClient = container.resolve<IAuthClient>('authClient');
-                        const refreshedSession = await authClient.refreshSession();
+                        // Revalidar sessão usando checkSession (singleflight + throttle)
+                        logger.info('performSubmit - Retry: Revalidating session', { timestamp: Date.now() });
+                        await checkSession(true); // Forçar verificação
                         
-                        if (refreshedSession) {
-                            logger.debug('Session refreshed successfully, retrying save operation');
-                            
-                            // Criar novo AbortController para retry
-                            const retryController = new AbortController();
-                            abortControllersRef.current.set(`${operationId}_retry`, retryController);
-                            
-                            // Tentar novamente após renovar sessão com timeout
-                            const result = await withTimeout(
-                                async (signal) => {
-                                    if (signal.aborted) {
-                                        throw new AbortedError('Operação foi cancelada');
-                                    }
-                                    return await attemptSave(signal);
-                                },
-                                {
-                                    timeout: 30000,
-                                    abortController: retryController,
+                        logger.info('performSubmit - Retry: Session validated, retrying save operation', {
+                            timestamp: Date.now()
+                        });
+                        
+                        // Criar novo AbortController para retry
+                        const retryController = new AbortController();
+                        abortControllersRef.current.set(`${operationId}_retry`, retryController);
+                        
+                        // Tentar novamente após renovar sessão com timeout curto
+                        const result = await withTimeout(
+                            async (signal) => {
+                                if (signal.aborted) {
+                                    throw new AbortedError('Operação foi cancelada');
                                 }
-                            );
-                            
-                            appointmentId = result.appointmentId;
-                            patientId = result.patientId;
-                            
-                            abortControllersRef.current.delete(`${operationId}_retry`);
-                        } else {
-                            throw new Error('Não foi possível renovar a sessão. Por favor, faça login novamente.');
-                        }
-                    } catch (refreshError) {
-                        logger.error(refreshError, { context: 'sessionRefresh' });
-                        showError('Sua sessão expirou. Por favor, faça login novamente.');
+                                return await attemptSave(signal);
+                            },
+                            {
+                                timeout: 8000, // 8 segundos para retry
+                                abortController: retryController,
+                            }
+                        );
+                        
+                        appointmentId = result.appointmentId;
+                        patientId = result.patientId;
+                        
+                        logger.info('performSubmit - Retry successful', {
+                            timestamp: Date.now(),
+                            appointmentId
+                        });
+                        
+                        abortControllersRef.current.delete(`${operationId}_retry`);
+                    } catch (retryError) {
+                        logger.error('performSubmit - Retry failed', {
+                            error: retryError,
+                            timestamp: Date.now(),
+                            context: 'performSubmit.retry'
+                        });
+                        showError('Não foi possível salvar após renovar sessão. Por favor, tente novamente.');
                         setIsSubmitting(false);
+                        abortControllersRef.current.delete(`${operationId}_retry`);
                         return;
                     }
                 } else {

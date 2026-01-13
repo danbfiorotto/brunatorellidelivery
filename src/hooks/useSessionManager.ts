@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 import { useDependencies } from './useDependencies';
 import { logger } from '../lib/logger';
 
@@ -61,32 +61,46 @@ export function useSessionManager(config: SessionManagerConfig = {}) {
     
     const container = useDependencies();
     const lastCheckRef = useRef<number>(Date.now());
+    const lastOkAtRef = useRef<number>(0); // Timestamp da última verificação bem-sucedida
     const sessionCheckPromiseRef = useRef<Promise<void> | null>(null);
     const initialCheckPromiseRef = useRef<Promise<void> | null>(null);
+    const [sessionReady, setSessionReady] = useState<boolean>(false);
     const SAFETY_TIMEOUT_MS = 30000; // 30 segundos
     
     /**
      * Verifica e atualiza a sessão se necessário
-     * Usa Promise compartilhada para evitar verificações concorrentes
+     * Usa Promise compartilhada (singleflight) + throttle real para evitar verificações concorrentes e frequentes
      */
-    const checkAndRefreshSession = useCallback(async (): Promise<void> => {
-        // Se já existe uma verificação em andamento, aguardar ela
+    const checkAndRefreshSession = useCallback(async (force: boolean = false): Promise<void> => {
+        const now = Date.now();
+        
+        // Throttle real: se não for forçado e última verificação bem-sucedida foi há menos de checkInterval, retornar
+        if (!force && (now - lastOkAtRef.current) < checkInterval) {
+            logger.debug('useSessionManager - Throttled: last check was recent', {
+                timestamp: now,
+                timeSinceLastOk: now - lastOkAtRef.current,
+                checkInterval
+            });
+            return;
+        }
+        
+        // Se já existe uma verificação em andamento, aguardar ela (singleflight)
         if (sessionCheckPromiseRef.current) {
             logger.debug('useSessionManager - Session check already in progress, awaiting existing check', {
-                timestamp: Date.now()
+                timestamp: now
             });
             try {
                 await sessionCheckPromiseRef.current;
             } catch (error) {
                 // Ignorar erros da verificação anterior - cada chamador trata seus próprios erros
                 logger.debug('useSessionManager - Previous check had error (ignored)', {
-                    timestamp: Date.now()
+                    timestamp: now
                 });
             }
             return;
         }
         
-        const checkTimestamp = Date.now();
+        const checkTimestamp = now;
         
         // Criar nova Promise de verificação com timeout de segurança
         const checkPromise = (async (): Promise<void> => {
@@ -121,8 +135,15 @@ export function useSessionManager(config: SessionManagerConfig = {}) {
                                 timestamp: checkTimestamp,
                                 hasSession: !!session
                             });
+                            setSessionReady(false);
                             onSessionExpired?.();
                             return;
+                        }
+                        
+                        // Marcar sessão como pronta se ainda não estava
+                        if (!sessionReady) {
+                            logger.info('useSessionManager - Session ready', { timestamp: checkTimestamp });
+                            setSessionReady(true);
                         }
                         
                         // Tentar refresh se disponível e passou tempo suficiente
@@ -160,7 +181,9 @@ export function useSessionManager(config: SessionManagerConfig = {}) {
                             });
                         }
                         
+                        // Atualizar timestamps apenas se sessão foi validada com sucesso
                         lastCheckRef.current = Date.now();
+                        lastOkAtRef.current = Date.now();
                     })(),
                     timeoutPromise
                 ]);
@@ -206,13 +229,14 @@ export function useSessionManager(config: SessionManagerConfig = {}) {
         
         // Verificar sessão ao voltar à página
         if (isVisible) {
-            logger.info('useSessionManager - Page became visible, resetting states and checking session', {
+            logger.info('useSessionManager - Page became visible, checking session', {
                 timestamp
             });
-            // Resetar estados travados (ex: isSubmitting)
-            onResetStates?.();
+            // NÃO resetar estados automaticamente - isso causa bugs de "não salva após minimizar"
+            // O draft já preserva os dados do formulário
+            // onResetStates?.(); // Removido - não resetar form/modal automaticamente
             
-            // Verificar e refresh sessão
+            // Verificar e refresh sessão (singleflight já previne múltiplas chamadas)
             checkAndRefreshSession();
         } else {
             logger.info('useSessionManager - Page became hidden', { timestamp });
@@ -309,8 +333,8 @@ export function useSessionManager(config: SessionManagerConfig = {}) {
         // Online/Offline
         window.addEventListener('online', handleOnline);
         
-        // Verificação inicial - criar Promise e armazenar para sincronização
-        const initialPromise = checkAndRefreshSession().catch((error) => {
+        // Verificação inicial - forçar verificação mesmo se recente
+        const initialPromise = checkAndRefreshSession(true).catch((error) => {
             logger.error('useSessionManager - Initial session check failed', {
                 error,
                 timestamp: Date.now()
@@ -352,6 +376,8 @@ export function useSessionManager(config: SessionManagerConfig = {}) {
         checkSession: checkAndRefreshSession,
         /** Promise da verificação inicial (para sincronização com loadData) */
         initialCheckPromise: initialCheckPromiseRef.current,
+        /** Flag indicando se sessão está pronta (gate para carregamento de dados) */
+        sessionReady,
         /** Último timestamp de verificação */
         lastCheck: lastCheckRef.current,
     };
