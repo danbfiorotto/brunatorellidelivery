@@ -192,8 +192,21 @@ export class AppointmentService implements IAppointmentService {
             // 5. Persistir
             const created = await this.repository.create(appointment);
             
-            // 6. Side effects (atualizar última visita)
-            await this.updatePatientLastVisit(patientId, appointment.date);
+            // 6. Side effects (atualizar última visita) - não deve impedir criação do appointment
+            logger.info('AppointmentService.create - Updating patient last visit', {
+                patientId,
+                appointmentDate: appointment.date,
+                timestamp: Date.now()
+            });
+            this.updatePatientLastVisit(patientId, appointment.date).catch((error) => {
+                // Não falhar criação de appointment se atualização de lastVisit falhar
+                logger.warn('AppointmentService.create - Failed to update patient last visit (non-blocking)', {
+                    patientId,
+                    error,
+                    appointmentId: created.id,
+                    timestamp: Date.now()
+                });
+            });
             
             logger.debug('Appointment created successfully', { appointmentId: created.id });
             await logAction('create', 'appointment', created.id, null, created.toJSON());
@@ -285,15 +298,41 @@ export class AppointmentService implements IAppointmentService {
      * Atualiza última visita do paciente
      */
     private async updatePatientLastVisit(patientId: string, date: Date | string): Promise<void> {
+        const startTimestamp = Date.now();
+        logger.info('AppointmentService.updatePatientLastVisit - Called', {
+            patientId,
+            date,
+            timestamp: startTimestamp
+        });
+        
         try {
             const patient = await this.patientRepository.findById(patientId);
             if (patient) {
                 patient.updateLastVisit(date);
                 await this.patientRepository.update(patientId, patient);
+                
+                logger.info('AppointmentService.updatePatientLastVisit - Success', {
+                    patientId,
+                    date,
+                    timestamp: Date.now(),
+                    duration: Date.now() - startTimestamp
+                });
+            } else {
+                logger.warn('AppointmentService.updatePatientLastVisit - Patient not found', {
+                    patientId,
+                    timestamp: Date.now()
+                });
             }
         } catch (error) {
             // Não falhar criação de appointment se atualização de lastVisit falhar
-            logger.warn('Failed to update patient last visit', { patientId, error });
+            logger.warn('AppointmentService.updatePatientLastVisit - Failed (non-blocking)', {
+                patientId,
+                date,
+                error,
+                timestamp: Date.now(),
+                duration: Date.now() - startTimestamp,
+                context: 'updatePatientLastVisit'
+            });
         }
     }
     
@@ -339,9 +378,22 @@ export class AppointmentService implements IAppointmentService {
             logger.debug('Appointment updated successfully', { appointmentId: id });
             await logAction('update', 'appointment', id, oldData.toJSON(), data.toJSON());
 
-            // Atualizar última visita do paciente
+            // Atualizar última visita do paciente - não deve impedir atualização do appointment
             if (patientId && appointmentData.date) {
-                await this.updatePatientLastVisit(patientId, appointmentData.date);
+                logger.info('AppointmentService.update - Updating patient last visit', {
+                    patientId,
+                    appointmentDate: appointmentData.date,
+                    timestamp: Date.now()
+                });
+                this.updatePatientLastVisit(patientId, appointmentData.date).catch((error) => {
+                    // Não falhar atualização de appointment se atualização de lastVisit falhar
+                    logger.warn('AppointmentService.update - Failed to update patient last visit (non-blocking)', {
+                        patientId,
+                        error,
+                        appointmentId: id,
+                        timestamp: Date.now()
+                    });
+                });
             }
 
             // Invalidar cache

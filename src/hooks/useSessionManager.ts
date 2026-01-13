@@ -68,22 +68,30 @@ export function useSessionManager(config: SessionManagerConfig = {}) {
      */
     const checkAndRefreshSession = useCallback(async () => {
         // Evitar verificações simultâneas
-        if (isCheckingRef.current) return;
+        if (isCheckingRef.current) {
+            logger.debug('useSessionManager - Session check already in progress', { timestamp: Date.now() });
+            return;
+        }
         
         isCheckingRef.current = true;
+        const checkTimestamp = Date.now();
         
         try {
+            logger.info('useSessionManager - Checking session', { timestamp: checkTimestamp });
             const authClient = container.resolve('authClient') as IAuthClient | undefined;
             
             if (!authClient) {
-                logger.warn('useSessionManager - authClient not found');
+                logger.warn('useSessionManager - authClient not found', { timestamp: checkTimestamp });
                 return;
             }
             
             const session = await authClient.getSession();
             
             if (!session?.user) {
-                logger.debug('useSessionManager - Session expired');
+                logger.warn('useSessionManager - Session expired', {
+                    timestamp: checkTimestamp,
+                    hasSession: !!session
+                });
                 onSessionExpired?.();
                 return;
             }
@@ -93,8 +101,15 @@ export function useSessionManager(config: SessionManagerConfig = {}) {
             
             if (timeSinceLastCheck > checkInterval && authClient.refreshSession) {
                 try {
+                    logger.info('useSessionManager - Refreshing session', {
+                        timestamp: Date.now(),
+                        timeSinceLastCheck
+                    });
                     await authClient.refreshSession();
-                    logger.debug('useSessionManager - Session refreshed');
+                    logger.info('useSessionManager - Session refreshed successfully', {
+                        timestamp: Date.now(),
+                        userId: session.user.id
+                    });
                     
                     // Reobter serviços após refresh (podem ter tokens expirados)
                     onReinitializeServices?.();
@@ -102,36 +117,60 @@ export function useSessionManager(config: SessionManagerConfig = {}) {
                     // Notificar callback de refresh
                     onSessionRefresh?.();
                 } catch (error) {
-                    logger.error(error, { context: 'useSessionManager.refreshSession' });
+                    logger.error('useSessionManager - Session refresh failed', {
+                        error,
+                        timestamp: Date.now(),
+                        context: 'useSessionManager.refreshSession'
+                    });
                 }
+            } else {
+                logger.debug('useSessionManager - Session valid, no refresh needed', {
+                    timestamp: Date.now(),
+                    timeSinceLastCheck,
+                    checkInterval
+                });
             }
             
             lastCheckRef.current = Date.now();
         } catch (error) {
-            logger.error(error, { context: 'useSessionManager.checkAndRefreshSession' });
+            logger.error('useSessionManager - Session check failed', {
+                error,
+                timestamp: Date.now(),
+                context: 'useSessionManager.checkAndRefreshSession'
+            });
         } finally {
             isCheckingRef.current = false;
         }
-    }, [container, checkInterval, onSessionRefresh, onSessionExpired]);
+    }, [container, checkInterval, onSessionRefresh, onSessionExpired, onReinitializeServices]);
     
     /**
      * Handler para mudança de visibilidade
      */
     const handleVisibilityChange = useCallback(() => {
         const isVisible = document.visibilityState === 'visible';
+        const timestamp = Date.now();
         
-        logger.debug('useSessionManager - Visibility changed', { isVisible });
+        logger.info('useSessionManager - Visibility changed', {
+            isVisible,
+            state: document.visibilityState,
+            timestamp
+        });
         
         // Notificar callback
         onVisibilityChange?.(isVisible);
         
         // Verificar sessão ao voltar à página
         if (isVisible) {
+            logger.info('useSessionManager - Page became visible, resetting states and checking session', {
+                timestamp
+            });
             // Resetar estados travados (ex: isSubmitting)
             onResetStates?.();
             
             // Verificar e refresh sessão
             checkAndRefreshSession();
+        } else {
+            logger.info('useSessionManager - Page became hidden', { timestamp });
         }
     }, [checkAndRefreshSession, onVisibilityChange, onResetStates]);
     
@@ -139,9 +178,13 @@ export function useSessionManager(config: SessionManagerConfig = {}) {
      * Handler para pageshow (iOS PWA)
      */
     const handlePageShow = useCallback((event: PageTransitionEvent) => {
+        const timestamp = Date.now();
         // persisted = página restaurada do bfcache
         if (event.persisted) {
-            logger.debug('useSessionManager - Page restored from bfcache');
+            logger.info('useSessionManager - Page restored from BFCache', {
+                persisted: event.persisted,
+                timestamp
+            });
             
             // Resetar estados travados
             onResetStates?.();
@@ -154,6 +197,8 @@ export function useSessionManager(config: SessionManagerConfig = {}) {
             
             // Notificar mudança de visibilidade
             onVisibilityChange?.(true);
+        } else {
+            logger.debug('useSessionManager - Page shown (not from BFCache)', { timestamp });
         }
     }, [checkAndRefreshSession, onVisibilityChange, onResetStates, onPageRestored]);
     
@@ -185,10 +230,15 @@ export function useSessionManager(config: SessionManagerConfig = {}) {
      * Importante para iOS Safari que pode congelar a página no BFCache
      */
     const handlePageHide = useCallback((event: PageTransitionEvent) => {
-        logger.debug('useSessionManager - Page hiding', { persisted: event.persisted });
+        const timestamp = Date.now();
+        logger.info('useSessionManager - Page hiding', {
+            persisted: event.persisted,
+            timestamp
+        });
         
         // Se a página vai para o BFCache, salvar estado e abortar requisições
         if (event.persisted) {
+            logger.info('useSessionManager - Page going to BFCache, saving state', { timestamp });
             onPageHide?.();
         }
     }, [onPageHide]);

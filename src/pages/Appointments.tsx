@@ -336,24 +336,51 @@ const Appointments: React.FC = () => {
             loadData().catch(err => logger.error(err, { context: 'loadData after session refresh' }));
         },
         onPageHide: () => {
-            logger.debug('Appointments - Page hiding, aborting requests and saving draft');
+            const timestamp = Date.now();
+            logger.info('Appointments - Page hiding, aborting requests and saving draft', {
+                timestamp,
+                pendingRequests: abortControllersRef.current.size
+            });
+            
             // Abortar todas as requisições pendentes
+            let abortedCount = 0;
             abortControllersRef.current.forEach((controller, key) => {
                 if (!controller.signal.aborted) {
                     controller.abort();
-                    logger.debug('Appointments - Request aborted', { key });
+                    abortedCount++;
+                    logger.info('Appointments - Request aborted on pagehide', {
+                        key,
+                        timestamp
+                    });
                 }
             });
             abortControllersRef.current.clear();
+            
+            logger.info('Appointments - All requests aborted', {
+                abortedCount,
+                timestamp
+            });
             
             // Salvar rascunho
             saveDraft();
         },
         onPageRestored: () => {
-            logger.debug('Appointments - Page restored from BFCache');
+            const restoredTimestamp = Date.now();
+            logger.info('Appointments - Page restored from BFCache', {
+                timestamp: restoredTimestamp,
+                isModalOpen,
+                isSubmitting
+            });
+            
+            // Resetar isSubmitting para liberar o botão "Salvar"
+            setIsSubmitting(false);
+            
             // Restaurar rascunho apenas se o modal estiver aberto
             // Isso garante que os dados sejam recuperados apenas quando necessário
             if (isModalOpen) {
+                logger.info('Appointments - Restoring draft after BFCache restore', {
+                    timestamp: restoredTimestamp
+                });
                 restoreDraft();
                 
                 // Revalidar formulário
@@ -363,14 +390,103 @@ const Appointments: React.FC = () => {
                     });
                 }
             }
+            
+            // Reexecutar loadData e loadTotalStats para sincronizar a UI
+            logger.info('Appointments - Reloading data after BFCache restore', {
+                timestamp: restoredTimestamp
+            });
+            loadData().catch(err => {
+                logger.error('Appointments - Error reloading data after BFCache', {
+                    error: err,
+                    timestamp: Date.now()
+                });
+            });
+            loadTotalStats().catch(err => {
+                logger.error('Appointments - Error reloading totals after BFCache', {
+                    error: err,
+                    timestamp: Date.now()
+                });
+            });
         },
     });
+    
+    // Logs detalhados de eventos do navegador para diagnóstico
+    useEffect(() => {
+        const handleVisibilityChange = () => {
+            logger.info('Appointments - visibilitychange', {
+                state: document.visibilityState,
+                isSubmitting,
+                isModalOpen,
+                timestamp: Date.now(),
+            });
+        };
+        
+        const handleFocus = () => {
+            logger.info('Appointments - focus', {
+                timestamp: Date.now(),
+                isSubmitting,
+                isModalOpen,
+            });
+        };
+        
+        const handleBlur = () => {
+            logger.info('Appointments - blur', {
+                timestamp: Date.now(),
+                isSubmitting,
+                isModalOpen,
+            });
+        };
+        
+        const handlePageShow = (event: PageTransitionEvent) => {
+            logger.info('Appointments - pageshow', {
+                persisted: event.persisted,
+                timestamp: Date.now(),
+                isSubmitting,
+                isModalOpen,
+            });
+        };
+        
+        const handlePageHide = (event: PageTransitionEvent) => {
+            logger.info('Appointments - pagehide', {
+                persisted: event.persisted,
+                timestamp: Date.now(),
+                isSubmitting,
+                isModalOpen,
+            });
+        };
+        
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        window.addEventListener('focus', handleFocus);
+        window.addEventListener('blur', handleBlur);
+        window.addEventListener('pageshow', handlePageShow);
+        window.addEventListener('pagehide', handlePageHide);
+        
+        return () => {
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+            window.removeEventListener('focus', handleFocus);
+            window.removeEventListener('blur', handleBlur);
+            window.removeEventListener('pageshow', handlePageShow);
+            window.removeEventListener('pagehide', handlePageHide);
+        };
+    }, [isSubmitting, isModalOpen]);
 
     // Função para carregar totais de todos os appointments via RPC (otimizado)
     // Usa cálculo server-side ao invés de buscar milhares de registros
     const loadTotalStats = async (): Promise<void> => {
+        const startTimestamp = Date.now();
+        logger.info('loadTotalStats start', { timestamp: startTimestamp });
+        
         try {
             const totals = await appointmentService.getTotals();
+            
+            const endTimestamp = Date.now();
+            const duration = endTimestamp - startTimestamp;
+            
+            logger.info('loadTotalStats success', {
+                totals,
+                timestamp: endTimestamp,
+                duration
+            });
             
             setTotalStats({
                 received: totals.received,
@@ -378,13 +494,20 @@ const Appointments: React.FC = () => {
                 total: totals.total,
                 totalValue: totals.totalValue
             });
-            
-            logger.debug('Total stats loaded via RPC', {
-                ...totals
-            });
         } catch (error) {
-            logger.error(error, { context: 'loadTotalStats' });
+            const errorTimestamp = Date.now();
+            const duration = errorTimestamp - startTimestamp;
+            
+            logger.error('loadTotalStats error', {
+                error,
+                timestamp: errorTimestamp,
+                duration,
+                context: 'loadTotalStats'
+            });
+            
             // Em caso de erro, manter os valores atuais
+        } finally {
+            logger.info('loadTotalStats end', { timestamp: Date.now() });
         }
     };
 
@@ -450,6 +573,9 @@ const Appointments: React.FC = () => {
         const loadDataAsync = async (page: number = pagination.page): Promise<void> => {
             if (abortController.signal.aborted) return;
             
+            const startTimestamp = Date.now();
+            logger.info('loadData start', { timestamp: startTimestamp, page });
+            
             try {
                 setLoading(true);
                 const [appointmentsResult, clinicsData, patientsData, proceduresData] = await Promise.all([
@@ -464,6 +590,17 @@ const Appointments: React.FC = () => {
                     patientService.getAll(),
                     procedureService.getAll()
                 ]);
+                
+                const dataReceivedTimestamp = Date.now();
+                logger.info('loadData received data', {
+                    timestamp: dataReceivedTimestamp,
+                    duration: dataReceivedTimestamp - startTimestamp,
+                    appointmentsCount: appointmentsResult && typeof appointmentsResult === 'object' && 'data' in appointmentsResult
+                        ? (appointmentsResult as PaginatedResponse<Appointment>).data?.length
+                        : Array.isArray(appointmentsResult)
+                            ? appointmentsResult.length
+                            : 0
+                });
                 
                 // Carregar totais em paralelo
                 loadTotalStats();
@@ -522,9 +659,29 @@ const Appointments: React.FC = () => {
                 } else {
                     setProcedures(Array.isArray(proceduresData) ? proceduresData : []);
                 }
+                
+                const endTimestamp = Date.now();
+                const duration = endTimestamp - startTimestamp;
+                logger.info('loadData end', {
+                    timestamp: endTimestamp,
+                    duration,
+                    page
+                });
             } catch (error) {
-                if (abortController.signal.aborted) return;
-                logger.error(error, { context: 'Appointments.loadData' });
+                if (abortController.signal.aborted) {
+                    logger.debug('loadData aborted', { timestamp: Date.now() });
+                    return;
+                }
+                
+                const errorTimestamp = Date.now();
+                const duration = errorTimestamp - startTimestamp;
+                logger.error('loadData error', {
+                    error,
+                    timestamp: errorTimestamp,
+                    duration,
+                    context: 'Appointments.loadData',
+                    page
+                });
                 handleError(error, 'loadData');
             } finally {
                 if (!abortController.signal.aborted) {
@@ -793,18 +950,22 @@ const Appointments: React.FC = () => {
 
     // Função de submit reutilizável que pode ser chamada de diferentes formas
     const performSubmit = async (): Promise<void> => {
+        const startTimestamp = Date.now();
+        
         // Prevenir múltiplos submits
         if (isSubmitting) {
-            logger.debug('Submit blocked: already submitting');
+            logger.debug('performSubmit called but is already submitting', { timestamp: startTimestamp });
             return;
         }
         
-        logger.debug('Starting submit process', { 
+        logger.info('performSubmit start', { 
+            timestamp: startTimestamp,
             formData: {
                 date: formData.date,
                 time: formData.time,
                 patient_name: formData.patient_name,
-                procedure: formData.procedure
+                procedure: formData.procedure,
+                isEditing: !!editingAppointment
             }
         });
         
@@ -936,11 +1097,12 @@ const Appointments: React.FC = () => {
             
             // Revalidar sessão ANTES de tentar salvar (preventivo)
             try {
+                logger.info('performSubmit - Validating session', { timestamp: Date.now() });
                 const authClient = container.resolve<IAuthClient>('authClient');
                 const session = await authClient.getSession();
                 
                 if (!session?.user) {
-                    logger.warn('No session found, attempting refresh');
+                    logger.warn('performSubmit - No session found, attempting refresh', { timestamp: Date.now() });
                     showWarning('Sua sessão expirou. Renovando automaticamente...');
                     
                     const refreshed = await authClient.refreshSession();
@@ -948,10 +1110,30 @@ const Appointments: React.FC = () => {
                         throw new Error('Não foi possível renovar a sessão. Por favor, faça login novamente.');
                     }
                     
+                    logger.info('performSubmit - Session refreshed successfully', { timestamp: Date.now() });
+                    
+                    // Reobter serviços após refresh para garantir que usam o novo token
+                    const refreshedAppointmentService = container.resolve('appointmentService');
+                    const refreshedRadiographService = container.resolve('radiographService');
+                    
+                    // Atualizar referências locais se necessário
+                    // (Os serviços são obtidos via container.resolve, mas garantimos que estão atualizados)
+                    logger.info('performSubmit - Services reinitialized after session refresh', {
+                        timestamp: Date.now(),
+                        hasAppointmentService: !!refreshedAppointmentService,
+                        hasRadiographService: !!refreshedRadiographService
+                    });
+                    
                     showSuccess('Sessão renovada com sucesso!');
+                } else {
+                    logger.debug('performSubmit - Session valid', { timestamp: Date.now() });
                 }
             } catch (sessionError) {
-                logger.error(sessionError, { context: 'performSubmit.sessionValidation' });
+                logger.error('performSubmit - Session validation failed', {
+                    error: sessionError,
+                    timestamp: Date.now(),
+                    context: 'performSubmit.sessionValidation'
+                });
                 showError('Erro ao validar sessão. Por favor, tente novamente.');
                 setIsSubmitting(false);
                 abortControllersRef.current.delete(operationId);
@@ -974,21 +1156,48 @@ const Appointments: React.FC = () => {
                 }
                 
                 if (isEditing) {
-                    logger.debug('Updating appointment', { appointmentId: editingAppointment!.id });
+                    logger.info('performSubmit before update', {
+                        timestamp: Date.now(),
+                        appointmentId: editingAppointment!.id,
+                        dataToSave: {
+                            date: dataToSave.date,
+                            time: dataToSave.time,
+                            patientName: dataToSave.patientName,
+                            procedure: dataToSave.procedure,
+                            value: dataToSave.value
+                        }
+                    });
                     const updated = await appointmentService.update(editingAppointment!.id, dataToSave);
-                    logger.debug('Appointment updated successfully', { appointmentId: updated.id });
+                    logger.info('performSubmit after update', {
+                        timestamp: Date.now(),
+                        id: updated.id,
+                        patientId: updated.patientId
+                    });
                     return { appointmentId: updated.id, patientId: updated.patientId };
                 } else {
-                    logger.debug('Creating new appointment');
+                    logger.info('performSubmit before create', {
+                        timestamp: Date.now(),
+                        dataToSave: {
+                            date: dataToSave.date,
+                            time: dataToSave.time,
+                            patientName: dataToSave.patientName,
+                            procedure: dataToSave.procedure,
+                            value: dataToSave.value
+                        }
+                    });
                     // Permitir datas passadas pois atendimentos são preenchidos após o procedimento
                     const created = await appointmentService.create(dataToSave, true);
-                    logger.debug('Appointment created successfully', { appointmentId: created.id });
+                    logger.info('performSubmit after create', {
+                        timestamp: Date.now(),
+                        id: created.id,
+                        patientId: created.patientId
+                    });
                     return { appointmentId: created.id, patientId: created.patientId };
                 }
             };
 
             try {
-                            // Envolver com timeout e AbortController
+                // Envolver com timeout e AbortController
                 const result = await withTimeout(
                     async (signal) => {
                         if (signal.aborted) {
@@ -1000,10 +1209,18 @@ const Appointments: React.FC = () => {
                         timeout: 30000, // 30 segundos
                         abortController,
                         onTimeout: () => {
+                            logger.warn('performSubmit - Operation timeout warning', {
+                                timestamp: Date.now(),
+                                operationId,
+                                timeoutMs: 30000
+                            });
                             showWarning('A operação está demorando mais que o esperado...');
                         },
                         onAbort: () => {
-                            logger.debug('Save operation aborted');
+                            logger.info('performSubmit - Operation aborted via AbortController', {
+                                timestamp: Date.now(),
+                                operationId
+                            });
                         }
                     }
                 );
@@ -1016,14 +1233,24 @@ const Appointments: React.FC = () => {
                 
                 // Tratar erros específicos
                 if (saveError instanceof AbortedError) {
-                    logger.debug('Save operation was aborted');
+                    logger.info('performSubmit - Save operation was aborted', {
+                        timestamp: Date.now(),
+                        operationId,
+                        reason: 'Request was aborted (likely due to page navigation or minimize)'
+                    });
                     setIsSubmitting(false);
+                    // Não mostrar erro ao usuário se foi abortado intencionalmente (pagehide)
                     return;
                 }
                 
                 if (saveError instanceof TimeoutError) {
-                    logger.error(saveError, { context: 'performSubmit.timeout' });
-                    showError('A operação demorou muito. Por favor, tente novamente.');
+                    logger.error('performSubmit - Operation timed out', {
+                        error: saveError,
+                        timestamp: Date.now(),
+                        operationId,
+                        context: 'performSubmit.timeout'
+                    });
+                    showError('A operação demorou muito. Por favor, verifique sua conexão e tente novamente.');
                     setIsSubmitting(false);
                     return;
                 }
@@ -1102,10 +1329,10 @@ const Appointments: React.FC = () => {
                                     if (signal.aborted) {
                                         throw new AbortedError('Upload cancelado');
                                     }
-                                    
-                                    await radiographService.uploadRadiograph(
-                                        patientId,
-                                        appointmentId,
+                            
+                            await radiographService.uploadRadiograph(
+                                patientId,
+                                appointmentId,
                                         radiograph.file!
                                     );
                                 },
@@ -1127,17 +1354,34 @@ const Appointments: React.FC = () => {
                     } else if (radiographError instanceof AbortedError) {
                         logger.debug('Radiograph upload was aborted');
                     } else {
-                        showWarning(t('appointments.radiographsError') + ': ' + (radiographError as Error).message);
+                    showWarning(t('appointments.radiographsError') + ': ' + (radiographError as Error).message);
                     }
                 }
             }
             
             // Limpar rascunho e formulário ANTES de fechar modal
             clearDraft();
+            formDataRef.current = { ...initialFormData, currency: currency || 'BRL' };
             setFormData({ ...initialFormData, currency: currency || 'BRL' });
             setEditingAppointment(null);
             setValidationErrors({});
             setValueDisplay('');
+            
+            const endTimestamp = Date.now();
+            const duration = endTimestamp - startTimestamp;
+            
+            logger.info('performSubmit finished', {
+                timestamp: endTimestamp,
+                duration,
+                appointmentId,
+                patientId,
+                isEditing
+            });
+            
+            logger.info('Draft cleared after successful save', {
+                timestamp: endTimestamp,
+                appointmentId
+            });
             
             // Fechar modal após limpar tudo
             setIsModalOpen(false);
@@ -1164,10 +1408,24 @@ const Appointments: React.FC = () => {
             }, 100);
             
         } catch (error) {
+            const errorTimestamp = Date.now();
+            const duration = errorTimestamp - startTimestamp;
+            
             // Limpar AbortController em caso de erro
             abortControllersRef.current.delete(operationId);
             
-            logger.error(error, { context: 'saveAppointment' });
+            logger.error('performSubmit error', {
+                error,
+                timestamp: errorTimestamp,
+                duration,
+                context: 'performSubmit',
+                isEditing: !!editingAppointment,
+                formData: {
+                    date: formData.date,
+                    time: formData.time,
+                    patient_name: formData.patient_name
+                }
+            });
             
             // Sempre resetar estado, mesmo em caso de erro
             setIsSubmitting(false);
@@ -1176,14 +1434,17 @@ const Appointments: React.FC = () => {
             if (error instanceof TimeoutError) {
                 showError('A operação demorou muito. Por favor, verifique sua conexão e tente novamente.');
             } else if (error instanceof AbortedError) {
-                logger.debug('Save operation was aborted');
+                logger.info('performSubmit aborted', {
+                    timestamp: errorTimestamp,
+                    duration
+                });
                 // Não mostrar erro se foi abortado intencionalmente
             } else {
-                try {
-                    handleError(error, 'Appointments.saveAppointment');
-                } catch (handleErrorException) {
-                    // Se handleError lançar uma exceção, logar mas não falhar
-                    logger.error(handleErrorException, { context: 'handleError in saveAppointment' });
+            try {
+                handleError(error, 'Appointments.saveAppointment');
+            } catch (handleErrorException) {
+                // Se handleError lançar uma exceção, logar mas não falhar
+                logger.error(handleErrorException, { context: 'handleError in saveAppointment' });
                     showError('Erro ao salvar atendimento. Por favor, tente novamente.');
                 }
             }
@@ -2257,30 +2518,30 @@ const Appointments: React.FC = () => {
                         </div>
                         
                         <div className="flex justify-end gap-3">
-                            <Button 
-                                type="button" 
-                                variant="secondary" 
+                        <Button 
+                            type="button" 
+                            variant="secondary" 
                                 onClick={() => {
                                     setIsModalOpen(false);
                                 }}
-                            >
-                                {t('appointments.cancel')}
-                            </Button>
-                            <Button 
-                                type="button"
+                        >
+                            {t('appointments.cancel')}
+                        </Button>
+                        <Button 
+                            type="button"
                                 disabled={isSubmitting || (!offlineQueue.isOnline && offlineQueue.isSyncing)}
                                 onClick={(e: MouseEvent<HTMLButtonElement>) => {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    
-                                    // Verifica validação HTML5 antes de submeter
-                                    if (formRef.current && !formRef.current.checkValidity()) {
-                                        requestAnimationFrame(() => {
-                                            formRef.current!.reportValidity();
-                                        });
-                                        return;
-                                    }
-                                    
+                                e.preventDefault();
+                                e.stopPropagation();
+                                
+                                // Verifica validação HTML5 antes de submeter
+                                if (formRef.current && !formRef.current.checkValidity()) {
+                                    requestAnimationFrame(() => {
+                                        formRef.current!.reportValidity();
+                                    });
+                                    return;
+                                }
+                                
                                     // Tentar usar requestSubmit como fallback (melhor para iOS)
                                     if (formRef.current) {
                                         try {
@@ -2290,20 +2551,20 @@ const Appointments: React.FC = () => {
                                             performSubmit();
                                         }
                                     } else {
-                                        // Chama performSubmit diretamente
-                                        performSubmit();
+                                // Chama performSubmit diretamente
+                                performSubmit();
                                     }
-                                }}
-                            >
-                                {isSubmitting 
+                            }}
+                        >
+                            {isSubmitting 
                                     ? (offlineQueue.isOnline 
                                         ? (t('common.saving') || 'Salvando...')
                                         : 'Salvando localmente...')
-                                    : editingAppointment 
-                                        ? t('appointments.saveChanges') 
-                                        : t('appointments.saveAppointment')
-                                }
-                            </Button>
+                                : editingAppointment 
+                                    ? t('appointments.saveChanges') 
+                                    : t('appointments.saveAppointment')
+                            }
+                        </Button>
                         </div>
                     </div>
                 </form>

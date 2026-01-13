@@ -332,7 +332,10 @@ export class AppointmentRepository extends BaseRepository implements IAppointmen
             const result = await this.db.rpc('get_appointment_totals', { p_user_id: userId });
             
             if (!result) {
-                logger.warn('AppointmentRepository.getTotals - RPC returned null, using fallback');
+                logger.warn('AppointmentRepository.getTotals - RPC returned null, using fallback', {
+                    userId,
+                    timestamp: Date.now()
+                });
                 return this.calculateTotalsFallback();
             }
             
@@ -347,7 +350,10 @@ export class AppointmentRepository extends BaseRepository implements IAppointmen
                 totals = result as AppointmentTotals;
             }
             
-            logger.debug('AppointmentRepository.getTotals - Success', { totals });
+            logger.info('AppointmentRepository.getTotals - RPC success', {
+                totals,
+                timestamp: Date.now()
+            });
             
             return {
                 total: totals.total || 0,
@@ -360,10 +366,25 @@ export class AppointmentRepository extends BaseRepository implements IAppointmen
             const errorMessage = error instanceof Error ? error.message : String(error);
             // Se for 404, a função não existe no banco
             if (errorMessage.includes('404') || errorMessage.includes('Not Found') || errorMessage.includes('does not exist')) {
-                logger.warn('AppointmentRepository.getTotals - RPC function not found in database. Please run supabase_create_rpc_function.sql', { error: errorMessage });
+                logger.warn('AppointmentRepository.getTotals - RPC function not found in database (404). Please execute supabase_create_rpc_function.sql in Supabase SQL Editor', {
+                    error: errorMessage,
+                    userId,
+                    timestamp: Date.now(),
+                    action: 'Using fallback calculation method'
+                });
             } else {
-                logger.error(error, { context: 'AppointmentRepository.getTotals - RPC failed' });
+                logger.error('AppointmentRepository.getTotals - RPC failed', {
+                    error,
+                    errorMessage,
+                    userId,
+                    timestamp: Date.now(),
+                    context: 'AppointmentRepository.getTotals'
+                });
             }
+            
+            logger.info('AppointmentRepository.getTotals - Falling back to client-side calculation', {
+                timestamp: Date.now()
+            });
             return this.calculateTotalsFallback();
         }
     }
