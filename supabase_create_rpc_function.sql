@@ -1,5 +1,40 @@
--- Script para criar a função RPC get_appointment_totals no Supabase
--- Execute este script no SQL Editor do Supabase
+-- ============================================================================
+-- ⚠️ IMPORTANTE: ESTE SCRIPT DEVE SER EXECUTADO NO SUPABASE ⚠️
+-- ============================================================================
+--
+-- Este script cria a função RPC get_appointment_totals no banco de dados Supabase.
+-- SEM esta função, a aplicação usará um método de fallback que carrega até 10.000
+-- registros para calcular os totais no cliente, causando:
+--   - Múltiplas consultas pesadas ao banco
+--   - Lentidão na interface
+--   - Erros 404 no console
+--   - Sobrecarregamento do banco de dados
+--
+-- ============================================================================
+-- COMO EXECUTAR:
+-- ============================================================================
+--
+-- 1. Acesse o Supabase Dashboard (https://app.supabase.com)
+-- 2. Selecione seu projeto
+-- 3. Vá em "SQL Editor" no menu lateral
+-- 4. Clique em "New query"
+-- 5. Cole TODO o conteúdo deste arquivo
+-- 6. Clique em "Run" ou pressione Ctrl+Enter (Cmd+Enter no Mac)
+-- 7. Aguarde a confirmação de sucesso
+--
+-- ============================================================================
+-- VERIFICAÇÃO:
+-- ============================================================================
+--
+-- Após executar, você pode verificar se a função foi criada:
+--   SELECT routine_name 
+--   FROM information_schema.routines 
+--   WHERE routine_schema = 'public' 
+--   AND routine_name = 'get_appointment_totals';
+--
+-- Se retornar uma linha, a função foi criada com sucesso!
+--
+-- ============================================================================
 
 -- ==================== RPC FUNCTION: get_appointment_totals ====================
 -- This function calculates appointment totals server-side to avoid fetching

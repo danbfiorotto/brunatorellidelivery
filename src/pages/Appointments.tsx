@@ -324,7 +324,7 @@ const Appointments: React.FC = () => {
     });
     
     // Gerenciamento de sessão e visibilidade
-    useSessionManager({
+    const { initialCheckPromise } = useSessionManager({
         onResetStates: () => {
             logger.debug('Appointments - Resetting states on visibility change');
             setIsSubmitting(false);
@@ -570,6 +570,32 @@ const Appointments: React.FC = () => {
     useEffect(() => {
         const abortController = new AbortController();
         
+        const loadDataAfterSessionCheck = async (): Promise<void> => {
+            // Aguardar verificação inicial de sessão antes de carregar dados
+            // Isso garante que a sessão está válida antes de fazer requisições
+            if (initialCheckPromise) {
+                logger.info('Appointments - Waiting for initial session check before loading data', {
+                    timestamp: Date.now()
+                });
+                try {
+                    await initialCheckPromise;
+                    logger.info('Appointments - Session check completed, proceeding with data load', {
+                        timestamp: Date.now()
+                    });
+                } catch (error) {
+                    logger.warn('Appointments - Session check failed, but proceeding with data load', {
+                        error,
+                        timestamp: Date.now()
+                    });
+                    // Continuar mesmo se verificação de sessão falhar
+                }
+            }
+            
+            // Agora carregar dados após sessão ser confirmada
+            if (abortController.signal.aborted) return;
+            await loadDataAsync(pagination.page);
+        };
+        
         const loadDataAsync = async (page: number = pagination.page): Promise<void> => {
             if (abortController.signal.aborted) return;
             
@@ -690,13 +716,13 @@ const Appointments: React.FC = () => {
             }
         };
         
-        loadDataAsync();
+        loadDataAfterSessionCheck();
         
         return () => {
             abortController.abort();
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [pagination.page, filterStatus, sortColumn, sortDirection]);
+    }, [pagination.page, filterStatus, sortColumn, sortDirection, initialCheckPromise]);
 
     // Close suggestions when clicking outside
     useEffect(() => {
