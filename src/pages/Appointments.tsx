@@ -586,7 +586,6 @@ const Appointments: React.FC = () => {
 
     useEffect(() => {
         const effectRunId = ++effectRunIdCounterRef.current;
-        const abortController = new AbortController();
         
         // Abortar requisição anterior se filtros/página mudaram
         if (loadDataAbortControllerRef.current) {
@@ -700,21 +699,21 @@ const Appointments: React.FC = () => {
         
         const startTimestamp = Date.now();
         logger.info('loadData start', { timestamp: startTimestamp, page });
-            
-            try {
-                setLoading(true);
-                const [appointmentsResult, clinicsData, patientsData, proceduresData] = await Promise.all([
-                    appointmentService.getAll({
-                        page,
-                        pageSize: pagination.pageSize,
-                        orderBy: sortColumn,
-                        orderDirection: sortDirection,
-                        filters: filterStatus !== 'all' ? { status: filterStatus } : {}
-                    }),
-                    clinicService.getAll(),
-                    patientService.getAll(),
-                    procedureService.getAll()
-                ]);
+        
+        try {
+            setLoading(true);
+            const [appointmentsResult, clinicsData, patientsData, proceduresData] = await Promise.all([
+                appointmentService.getAll({
+                    page,
+                    pageSize: pagination.pageSize,
+                    orderBy: sortColumn,
+                    orderDirection: sortDirection,
+                    filters: filterStatus !== 'all' ? { status: filterStatus } : {}
+                }),
+                clinicService.getAll(),
+                patientService.getAll(),
+                procedureService.getAll()
+            ]);
             
             const dataReceivedTimestamp = Date.now();
             logger.info('loadData received data', {
@@ -726,94 +725,94 @@ const Appointments: React.FC = () => {
                         ? appointmentsResult.length
                         : 0
             });
-                
-                // Carregar totais em paralelo
-                loadTotalStats();
-                
+            
+            // Carregar totais em paralelo
+            loadTotalStats();
+            
             if (loadDataAbortControllerRef.current?.signal.aborted) return;
-                
-                // Debug log
-                logger.debug('Appointments loaded', { 
-                    result: appointmentsResult, 
-                    hasData: appointmentsResult && typeof appointmentsResult === 'object' && 'data' in appointmentsResult,
-                    isArray: Array.isArray(appointmentsResult),
-                    dataLength: appointmentsResult && typeof appointmentsResult === 'object' && 'data' in appointmentsResult 
-                        ? (appointmentsResult as PaginatedResponse<Appointment>).data?.length 
-                        : Array.isArray(appointmentsResult) 
-                            ? appointmentsResult.length 
-                            : 0,
-                    firstItem: appointmentsResult && typeof appointmentsResult === 'object' && 'data' in appointmentsResult
-                        ? (appointmentsResult as PaginatedResponse<Appointment>).data?.[0]
-                        : Array.isArray(appointmentsResult)
-                            ? appointmentsResult[0]
-                            : null
-                });
-                
-                if (appointmentsResult && typeof appointmentsResult === 'object' && 'data' in appointmentsResult) {
-                    setAppointments(appointmentsResult as PaginatedResponse<Appointment>);
-                    const paginatedResult = appointmentsResult as PaginatedResponse<Appointment>;
-                    setPagination(prev => ({
-                        ...prev,
-                        page: paginatedResult.pagination.page,
-                        total: paginatedResult.pagination.total,
-                        totalPages: paginatedResult.pagination.totalPages,
-                        hasNext: paginatedResult.pagination.hasNext,
-                        hasPrev: paginatedResult.pagination.hasPrev
-                    }));
-                } else {
-                    setAppointments(Array.isArray(appointmentsResult) ? appointmentsResult : []);
-                }
-                
-                // Tratar clínicas: verificar se é objeto paginado ou array
-                if (clinicsData && typeof clinicsData === 'object' && 'data' in clinicsData) {
-                    setClinics((clinicsData as PaginatedResponse<Clinic>).data || []);
-                } else {
-                    setClinics(Array.isArray(clinicsData) ? clinicsData : []);
-                }
-                
-                // Tratar pacientes: verificar se é objeto paginado ou array
-                if (patientsData && typeof patientsData === 'object' && 'data' in patientsData) {
-                    setPatients((patientsData as PaginatedResponse<Patient>).data || []);
-                } else {
-                    setPatients(Array.isArray(patientsData) ? patientsData : []);
-                }
-                
-                // Tratar procedimentos: verificar se é objeto paginado ou array
-                if (proceduresData && typeof proceduresData === 'object' && 'data' in proceduresData) {
-                    setProcedures((proceduresData as PaginatedResponse<Procedure>).data || []);
-                } else {
-                    setProcedures(Array.isArray(proceduresData) ? proceduresData : []);
-                }
-                
-                const endTimestamp = Date.now();
-                const duration = endTimestamp - startTimestamp;
-                logger.info('loadData end', {
-                    timestamp: endTimestamp,
-                    duration,
-                    page
-                });
-            } catch (error) {
-                if (abortController.signal.aborted) {
-                    logger.debug('loadData aborted', { timestamp: Date.now() });
-                    return;
-                }
-                
-                const errorTimestamp = Date.now();
-                const duration = errorTimestamp - startTimestamp;
-                logger.error('loadData error', {
-                    error,
-                    timestamp: errorTimestamp,
-                    duration,
-                    context: 'Appointments.loadData',
-                    page
-                });
-                handleError(error, 'loadData');
-            } finally {
-                if (!loadDataAbortControllerRef.current?.signal.aborted) {
-                    setLoading(false);
-                }
+            
+            // Debug log
+            logger.debug('Appointments loaded', { 
+                result: appointmentsResult, 
+                hasData: appointmentsResult && typeof appointmentsResult === 'object' && 'data' in appointmentsResult,
+                isArray: Array.isArray(appointmentsResult),
+                dataLength: appointmentsResult && typeof appointmentsResult === 'object' && 'data' in appointmentsResult 
+                    ? (appointmentsResult as PaginatedResponse<Appointment>).data?.length 
+                    : Array.isArray(appointmentsResult) 
+                        ? appointmentsResult.length 
+                        : 0,
+                firstItem: appointmentsResult && typeof appointmentsResult === 'object' && 'data' in appointmentsResult
+                    ? (appointmentsResult as PaginatedResponse<Appointment>).data?.[0]
+                    : Array.isArray(appointmentsResult)
+                        ? appointmentsResult[0]
+                        : null
+            });
+            
+            if (appointmentsResult && typeof appointmentsResult === 'object' && 'data' in appointmentsResult) {
+                setAppointments(appointmentsResult as PaginatedResponse<Appointment>);
+                const paginatedResult = appointmentsResult as PaginatedResponse<Appointment>;
+                setPagination(prev => ({
+                    ...prev,
+                    page: paginatedResult.pagination.page,
+                    total: paginatedResult.pagination.total,
+                    totalPages: paginatedResult.pagination.totalPages,
+                    hasNext: paginatedResult.pagination.hasNext,
+                    hasPrev: paginatedResult.pagination.hasPrev
+                }));
+            } else {
+                setAppointments(Array.isArray(appointmentsResult) ? appointmentsResult : []);
             }
-        }, [pagination.pageSize, sortColumn, sortDirection, filterStatus, appointmentService, clinicService, patientService, procedureService]);
+            
+            // Tratar clínicas: verificar se é objeto paginado ou array
+            if (clinicsData && typeof clinicsData === 'object' && 'data' in clinicsData) {
+                setClinics((clinicsData as PaginatedResponse<Clinic>).data || []);
+            } else {
+                setClinics(Array.isArray(clinicsData) ? clinicsData : []);
+            }
+            
+            // Tratar pacientes: verificar se é objeto paginado ou array
+            if (patientsData && typeof patientsData === 'object' && 'data' in patientsData) {
+                setPatients((patientsData as PaginatedResponse<Patient>).data || []);
+            } else {
+                setPatients(Array.isArray(patientsData) ? patientsData : []);
+            }
+            
+            // Tratar procedimentos: verificar se é objeto paginado ou array
+            if (proceduresData && typeof proceduresData === 'object' && 'data' in proceduresData) {
+                setProcedures((proceduresData as PaginatedResponse<Procedure>).data || []);
+            } else {
+                setProcedures(Array.isArray(proceduresData) ? proceduresData : []);
+            }
+            
+            const endTimestamp = Date.now();
+            const duration = endTimestamp - startTimestamp;
+            logger.info('loadData end', {
+                timestamp: endTimestamp,
+                duration,
+                page
+            });
+        } catch (error) {
+            if (loadDataAbortControllerRef.current?.signal.aborted) {
+                logger.debug('loadData aborted', { timestamp: Date.now() });
+                return;
+            }
+            
+            const errorTimestamp = Date.now();
+            const duration = errorTimestamp - startTimestamp;
+            logger.error('loadData error', {
+                error,
+                timestamp: errorTimestamp,
+                duration,
+                context: 'Appointments.loadData',
+                page
+            });
+            handleError(error, 'loadData');
+        } finally {
+            if (!loadDataAbortControllerRef.current?.signal.aborted) {
+                setLoading(false);
+            }
+        }
+    }, [pagination.pageSize, sortColumn, sortDirection, filterStatus, appointmentService, clinicService, patientService, procedureService]);
     
     useEffect(() => {
         const effectRunId = ++effectRunIdCounterRef.current;

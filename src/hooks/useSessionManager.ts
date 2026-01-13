@@ -186,8 +186,6 @@ export function useSessionManager(config: SessionManagerConfig = {}) {
                         // Tentar refresh se disponível e passou tempo suficiente
                         const timeSinceLastCheck = Date.now() - lastCheckRef.current;
                         
-                        const timeSinceLastCheck = Date.now() - lastCheckRef.current;
-                        
                         if (timeSinceLastCheck > checkInterval && authClient.refreshSession) {
                             try {
                                 logger.info('useSessionManager - Refreshing session', {
