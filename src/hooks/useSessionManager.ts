@@ -64,21 +64,37 @@ export function useSessionManager(config: SessionManagerConfig = {}) {
     const lastOkAtRef = useRef<number>(0); // Timestamp da última verificação bem-sucedida
     const sessionCheckPromiseRef = useRef<Promise<void> | null>(null);
     const initialCheckPromiseRef = useRef<Promise<void> | null>(null);
-    const [sessionReady, setSessionReady] = useState<boolean>(false);
+    const checkIdCounterRef = useRef<number>(0); // Contador para IDs de verificação
+    const [sessionState, setSessionState] = useState<'loading' | 'ready' | 'invalid'>('loading');
     const SAFETY_TIMEOUT_MS = 30000; // 30 segundos
     
     /**
      * Verifica e atualiza a sessão se necessário
      * Usa Promise compartilhada (singleflight) + throttle real para evitar verificações concorrentes e frequentes
      */
-    const checkAndRefreshSession = useCallback(async (force: boolean = false): Promise<void> => {
+    const checkAndRefreshSession = useCallback(async (force: boolean = false, reason: string = 'unknown'): Promise<void> => {
         const now = Date.now();
+        const checkId = ++checkIdCounterRef.current;
+        const timeSinceLastOk = now - lastOkAtRef.current;
+        
+        logger.info('useSessionManager - Session check requested', {
+            checkId,
+            reason,
+            timestamp: now,
+            force,
+            inFlight: !!sessionCheckPromiseRef.current,
+            lastOkAt: lastOkAtRef.current,
+            timeSinceLastOk,
+            sessionState
+        });
         
         // Throttle real: se não for forçado e última verificação bem-sucedida foi há menos de checkInterval, retornar
-        if (!force && (now - lastOkAtRef.current) < checkInterval) {
+        if (!force && timeSinceLastOk < checkInterval) {
             logger.debug('useSessionManager - Throttled: last check was recent', {
+                checkId,
+                reason,
                 timestamp: now,
-                timeSinceLastOk: now - lastOkAtRef.current,
+                timeSinceLastOk,
                 checkInterval
             });
             return;
@@ -86,14 +102,19 @@ export function useSessionManager(config: SessionManagerConfig = {}) {
         
         // Se já existe uma verificação em andamento, aguardar ela (singleflight)
         if (sessionCheckPromiseRef.current) {
-            logger.debug('useSessionManager - Session check already in progress, awaiting existing check', {
-                timestamp: now
+            logger.info('useSessionManager - Session check already in progress, awaiting existing check', {
+                checkId,
+                reason,
+                timestamp: now,
+                inFlight: true
             });
             try {
                 await sessionCheckPromiseRef.current;
             } catch (error) {
                 // Ignorar erros da verificação anterior - cada chamador trata seus próprios erros
                 logger.debug('useSessionManager - Previous check had error (ignored)', {
+                    checkId,
+                    reason,
                     timestamp: now
                 });
             }
@@ -120,11 +141,20 @@ export function useSessionManager(config: SessionManagerConfig = {}) {
                 // Race entre verificação e timeout
                 await Promise.race([
                     (async () => {
-                        logger.info('useSessionManager - Checking session', { timestamp: checkTimestamp });
+                        logger.info('useSessionManager - Checking session', {
+                            checkId,
+                            reason,
+                            timestamp: checkTimestamp
+                        });
                         const authClient = container.resolve('authClient') as IAuthClient | undefined;
                         
                         if (!authClient) {
-                            logger.warn('useSessionManager - authClient not found', { timestamp: checkTimestamp });
+                            logger.warn('useSessionManager - authClient not found', {
+                                checkId,
+                                reason,
+                                timestamp: checkTimestamp
+                            });
+                            setSessionState('invalid');
                             return;
                         }
                         
@@ -132,33 +162,48 @@ export function useSessionManager(config: SessionManagerConfig = {}) {
                         
                         if (!session?.user) {
                             logger.warn('useSessionManager - Session expired', {
+                                checkId,
+                                reason,
                                 timestamp: checkTimestamp,
-                                hasSession: !!session
+                                hasSession: !!session,
+                                result: 'invalid'
                             });
-                            setSessionReady(false);
+                            setSessionState('invalid');
                             onSessionExpired?.();
                             return;
                         }
                         
-                        // Marcar sessão como pronta se ainda não estava
-                        if (!sessionReady) {
-                            logger.info('useSessionManager - Session ready', { timestamp: checkTimestamp });
-                            setSessionReady(true);
-                        }
+                        // Marcar sessão como pronta
+                        logger.info('useSessionManager - Session valid', {
+                            checkId,
+                            reason,
+                            timestamp: checkTimestamp,
+                            userId: session.user.id,
+                            result: 'ok'
+                        });
+                        setSessionState('ready');
                         
                         // Tentar refresh se disponível e passou tempo suficiente
+                        const timeSinceLastCheck = Date.now() - lastCheckRef.current;
+                        
                         const timeSinceLastCheck = Date.now() - lastCheckRef.current;
                         
                         if (timeSinceLastCheck > checkInterval && authClient.refreshSession) {
                             try {
                                 logger.info('useSessionManager - Refreshing session', {
+                                    checkId,
+                                    reason,
                                     timestamp: Date.now(),
-                                    timeSinceLastCheck
+                                    timeSinceLastCheck,
+                                    result: 'refresh'
                                 });
                                 await authClient.refreshSession();
                                 logger.info('useSessionManager - Session refreshed successfully', {
+                                    checkId,
+                                    reason,
                                     timestamp: Date.now(),
-                                    userId: session.user.id
+                                    userId: session.user.id,
+                                    result: 'refresh_ok'
                                 });
                                 
                                 // Reobter serviços após refresh (podem ter tokens expirados)
@@ -168,31 +213,51 @@ export function useSessionManager(config: SessionManagerConfig = {}) {
                                 onSessionRefresh?.();
                             } catch (error) {
                                 logger.error('useSessionManager - Session refresh failed', {
+                                    checkId,
+                                    reason,
                                     error,
                                     timestamp: Date.now(),
+                                    result: 'refresh_failed',
                                     context: 'useSessionManager.refreshSession'
                                 });
                             }
                         } else {
                             logger.debug('useSessionManager - Session valid, no refresh needed', {
+                                checkId,
+                                reason,
                                 timestamp: Date.now(),
                                 timeSinceLastCheck,
-                                checkInterval
+                                checkInterval,
+                                result: 'ok_no_refresh'
                             });
                         }
                         
                         // Atualizar timestamps apenas se sessão foi validada com sucesso
                         lastCheckRef.current = Date.now();
                         lastOkAtRef.current = Date.now();
+                        
+                        logger.info('useSessionManager - Session check completed', {
+                            checkId,
+                            reason,
+                            timestamp: Date.now(),
+                            duration: Date.now() - checkTimestamp,
+                            result: 'ok',
+                            lastOkAt: lastOkAtRef.current
+                        });
                     })(),
                     timeoutPromise
                 ]);
             } catch (error) {
                 logger.error('useSessionManager - Session check failed', {
+                    checkId,
+                    reason,
                     error,
                     timestamp: Date.now(),
+                    duration: Date.now() - checkTimestamp,
+                    result: 'error',
                     context: 'useSessionManager.checkAndRefreshSession'
                 });
+                setSessionState('invalid');
                 throw error;
             } finally {
                 // Sempre limpar timeout e Promise, mesmo em caso de erro
@@ -237,7 +302,7 @@ export function useSessionManager(config: SessionManagerConfig = {}) {
             // onResetStates?.(); // Removido - não resetar form/modal automaticamente
             
             // Verificar e refresh sessão (singleflight já previne múltiplas chamadas)
-            checkAndRefreshSession();
+            checkAndRefreshSession(false, 'visibility');
         } else {
             logger.info('useSessionManager - Page became hidden', { timestamp });
         }
@@ -262,7 +327,7 @@ export function useSessionManager(config: SessionManagerConfig = {}) {
             onPageRestored?.();
             
             // Verificar sessão
-            checkAndRefreshSession();
+            checkAndRefreshSession(false, 'pageshow');
             
             // Notificar mudança de visibilidade
             onVisibilityChange?.(true);
@@ -282,7 +347,7 @@ export function useSessionManager(config: SessionManagerConfig = {}) {
         
         // Só verificar se passou mais de 5 segundos
         if (timeSinceLastCheck > 5000) {
-            checkAndRefreshSession();
+            checkAndRefreshSession(false, 'focus');
         }
     }, [checkAndRefreshSession]);
     
@@ -291,7 +356,7 @@ export function useSessionManager(config: SessionManagerConfig = {}) {
      */
     const handleOnline = useCallback(() => {
         logger.debug('useSessionManager - Device online');
-        checkAndRefreshSession();
+        checkAndRefreshSession(false, 'online');
     }, [checkAndRefreshSession]);
     
     /**
@@ -334,7 +399,7 @@ export function useSessionManager(config: SessionManagerConfig = {}) {
         window.addEventListener('online', handleOnline);
         
         // Verificação inicial - forçar verificação mesmo se recente
-        const initialPromise = checkAndRefreshSession(true).catch((error) => {
+        const initialPromise = checkAndRefreshSession(true, 'initial').catch((error) => {
             logger.error('useSessionManager - Initial session check failed', {
                 error,
                 timestamp: Date.now()
@@ -373,11 +438,11 @@ export function useSessionManager(config: SessionManagerConfig = {}) {
     
     return {
         /** Força verificação de sessão */
-        checkSession: checkAndRefreshSession,
+        checkSession: (force?: boolean, reason?: string) => checkAndRefreshSession(force || false, reason || 'manual'),
         /** Promise da verificação inicial (para sincronização com loadData) */
         initialCheckPromise: initialCheckPromiseRef.current,
-        /** Flag indicando se sessão está pronta (gate para carregamento de dados) */
-        sessionReady,
+        /** Estado da sessão: 'loading' | 'ready' | 'invalid' (gate para carregamento de dados) */
+        sessionState,
         /** Último timestamp de verificação */
         lastCheck: lastCheckRef.current,
     };

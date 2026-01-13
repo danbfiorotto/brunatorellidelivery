@@ -313,6 +313,9 @@ const Appointments: React.FC = () => {
     
     // Ref para prevenir loadData duplicado (singleflight)
     const loadDataInFlightRef = useRef<Promise<void> | null>(null);
+    const loadDataAbortControllerRef = useRef<AbortController | null>(null); // AbortController para cancelar loadData anterior
+    const effectRunIdCounterRef = useRef<number>(0); // Contador para IDs de execução do effect
+    const submitIdCounterRef = useRef<number>(0); // Contador para IDs de submit
     
     // Upload de radiografias será feito após criar o appointment
     // Mantemos os File objects no formData para upload posterior
@@ -337,7 +340,7 @@ const Appointments: React.FC = () => {
     // Gerenciamento de sessão e visibilidade
     // IMPORTANTE: NÃO resetar estados do form/modal no visibilitychange
     // Isso causa o bug de "não salva após minimizar" porque o estado fica inconsistente
-    const { sessionReady, checkSession } = useSessionManager({
+    const { sessionState, checkSession } = useSessionManager({
         onResetStates: () => {
             // Apenas resetar isSubmitting se realmente necessário (não resetar form/modal)
             // O draft já preserva os dados do formulário
@@ -582,47 +585,95 @@ const Appointments: React.FC = () => {
     }, [container]);
 
     useEffect(() => {
+        const effectRunId = ++effectRunIdCounterRef.current;
         const abortController = new AbortController();
+        
+        // Abortar requisição anterior se filtros/página mudaram
+        if (loadDataAbortControllerRef.current) {
+            logger.info('Appointments - Aborting previous loadData due to filter/page change', {
+                effectRunId,
+                timestamp: Date.now(),
+                previousAborted: true
+            });
+            loadDataAbortControllerRef.current.abort();
+        }
+        
+        // Criar novo AbortController para esta execução
+        const abortController = new AbortController();
+        loadDataAbortControllerRef.current = abortController;
+        
+        logger.info('Appointments - useEffect loadData triggered', {
+            effectRunId,
+            timestamp: Date.now(),
+            sessionState,
+            filtersKey,
+            page: pagination.page,
+            willLoad: sessionState === 'ready'
+        });
         
         const loadDataAfterSessionCheck = async (): Promise<void> => {
             // Aguardar sessão estar pronta antes de carregar dados
             // Isso garante que a sessão está válida antes de fazer requisições
-            if (!sessionReady) {
+            if (sessionState !== 'ready') {
                 logger.info('Appointments - Waiting for session to be ready before loading data', {
-                    timestamp: Date.now()
+                    effectRunId,
+                    timestamp: Date.now(),
+                    sessionState,
+                    willSkip: true
                 });
                 // Não carregar dados até sessão estar pronta
                 return;
             }
             
-            // Se já existe um loadData em andamento, aguardar ele (singleflight)
-            if (loadDataInFlightRef.current) {
-                logger.debug('Appointments - loadData already in progress, awaiting existing load', {
-                    timestamp: Date.now()
+            // Se já existe um loadData em andamento e não foi abortado, aguardar ele (singleflight)
+            // Mas se foi abortado (filtros/página mudaram), iniciar novo load
+            if (loadDataInFlightRef.current && !abortController.signal.aborted) {
+                logger.info('Appointments - loadData already in progress, awaiting existing load', {
+                    effectRunId,
+                    timestamp: Date.now(),
+                    inFlight: true
                 });
                 try {
                     await loadDataInFlightRef.current;
                 } catch (error) {
-                    // Ignorar erros do load anterior
+                    // Ignorar erros do load anterior (pode ter sido abortado)
                     logger.debug('Appointments - Previous loadData had error (ignored)', {
-                        timestamp: Date.now()
+                        effectRunId,
+                        timestamp: Date.now(),
+                        error: error instanceof Error ? error.message : String(error)
                     });
                 }
                 return;
             }
             
             logger.info('Appointments - Session ready, proceeding with data load', {
-                timestamp: Date.now()
+                effectRunId,
+                timestamp: Date.now(),
+                sessionState,
+                filtersKey,
+                page: pagination.page,
+                willLoad: true
             });
             
             // Criar Promise de loadData e armazenar no ref
             const loadPromise = (async () => {
                 try {
-                    if (abortController.signal.aborted) return;
+                    if (abortController.signal.aborted) {
+                        logger.debug('Appointments - loadData aborted before start', {
+                            effectRunId,
+                            timestamp: Date.now()
+                        });
+                        return;
+                    }
                     await loadDataAsync(pagination.page);
                 } finally {
                     // Sempre limpar o ref, mesmo em caso de erro
-                    loadDataInFlightRef.current = null;
+                    if (loadDataInFlightRef.current === loadPromise) {
+                        loadDataInFlightRef.current = null;
+                    }
+                    if (loadDataAbortControllerRef.current === abortController) {
+                        loadDataAbortControllerRef.current = null;
+                    }
                 }
             })();
             
@@ -630,11 +681,25 @@ const Appointments: React.FC = () => {
             await loadPromise;
         };
         
-        const loadDataAsync = async (page: number = pagination.page): Promise<void> => {
-            if (abortController.signal.aborted) return;
-            
-            const startTimestamp = Date.now();
-            logger.info('loadData start', { timestamp: startTimestamp, page });
+        loadDataAfterSessionCheck();
+        
+        return () => {
+            // Abortar ao desmontar ou quando dependências mudarem
+            abortController.abort();
+            if (loadDataAbortControllerRef.current === abortController) {
+                loadDataAbortControllerRef.current = null;
+            }
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [pagination.page, filtersKey, sessionState]);
+    
+    // Função loadDataAsync separada (usada também em outros lugares)
+    const loadDataAsync = useCallback(async (page: number = pagination.page): Promise<void> => {
+        // Verificar se há um AbortController ativo para este load
+        if (loadDataAbortControllerRef.current?.signal.aborted) return;
+        
+        const startTimestamp = Date.now();
+        logger.info('loadData start', { timestamp: startTimestamp, page });
             
             try {
                 setLoading(true);
@@ -650,22 +715,22 @@ const Appointments: React.FC = () => {
                     patientService.getAll(),
                     procedureService.getAll()
                 ]);
-                
-                const dataReceivedTimestamp = Date.now();
-                logger.info('loadData received data', {
-                    timestamp: dataReceivedTimestamp,
-                    duration: dataReceivedTimestamp - startTimestamp,
-                    appointmentsCount: appointmentsResult && typeof appointmentsResult === 'object' && 'data' in appointmentsResult
-                        ? (appointmentsResult as PaginatedResponse<Appointment>).data?.length
-                        : Array.isArray(appointmentsResult)
-                            ? appointmentsResult.length
-                            : 0
-                });
+            
+            const dataReceivedTimestamp = Date.now();
+            logger.info('loadData received data', {
+                timestamp: dataReceivedTimestamp,
+                duration: dataReceivedTimestamp - startTimestamp,
+                appointmentsCount: appointmentsResult && typeof appointmentsResult === 'object' && 'data' in appointmentsResult
+                    ? (appointmentsResult as PaginatedResponse<Appointment>).data?.length
+                    : Array.isArray(appointmentsResult)
+                        ? appointmentsResult.length
+                        : 0
+            });
                 
                 // Carregar totais em paralelo
                 loadTotalStats();
                 
-                if (abortController.signal.aborted) return;
+            if (loadDataAbortControllerRef.current?.signal.aborted) return;
                 
                 // Debug log
                 logger.debug('Appointments loaded', { 
@@ -744,19 +809,119 @@ const Appointments: React.FC = () => {
                 });
                 handleError(error, 'loadData');
             } finally {
-                if (!abortController.signal.aborted) {
+                if (!loadDataAbortControllerRef.current?.signal.aborted) {
                     setLoading(false);
                 }
             }
+        }, [pagination.pageSize, sortColumn, sortDirection, filterStatus, appointmentService, clinicService, patientService, procedureService]);
+    
+    useEffect(() => {
+        const effectRunId = ++effectRunIdCounterRef.current;
+        
+        // Abortar requisição anterior se filtros/página mudaram
+        if (loadDataAbortControllerRef.current) {
+            logger.info('Appointments - Aborting previous loadData due to filter/page change', {
+                effectRunId,
+                timestamp: Date.now(),
+                previousAborted: true
+            });
+            loadDataAbortControllerRef.current.abort();
+        }
+        
+        // Criar novo AbortController para esta execução
+        const abortController = new AbortController();
+        loadDataAbortControllerRef.current = abortController;
+        
+        logger.info('Appointments - useEffect loadData triggered', {
+            effectRunId,
+            timestamp: Date.now(),
+            sessionState,
+            filtersKey,
+            page: pagination.page,
+            willLoad: sessionState === 'ready'
+        });
+        
+        const loadDataAfterSessionCheck = async (): Promise<void> => {
+            // Aguardar sessão estar pronta antes de carregar dados
+            // Isso garante que a sessão está válida antes de fazer requisições
+            if (sessionState !== 'ready') {
+                logger.info('Appointments - Waiting for session to be ready before loading data', {
+                    effectRunId,
+                    timestamp: Date.now(),
+                    sessionState,
+                    willSkip: true
+                });
+                // Não carregar dados até sessão estar pronta
+                return;
+            }
+            
+            // Se já existe um loadData em andamento e não foi abortado, aguardar ele (singleflight)
+            // Mas se foi abortado (filtros/página mudaram), iniciar novo load
+            if (loadDataInFlightRef.current && !abortController.signal.aborted) {
+                logger.info('Appointments - loadData already in progress, awaiting existing load', {
+                    effectRunId,
+                    timestamp: Date.now(),
+                    inFlight: true
+                });
+                try {
+                    await loadDataInFlightRef.current;
+                } catch (error) {
+                    // Ignorar erros do load anterior (pode ter sido abortado)
+                    logger.debug('Appointments - Previous loadData had error (ignored)', {
+                        effectRunId,
+                        timestamp: Date.now(),
+                        error: error instanceof Error ? error.message : String(error)
+                    });
+                }
+                return;
+            }
+            
+            logger.info('Appointments - Session ready, proceeding with data load', {
+                effectRunId,
+                timestamp: Date.now(),
+                sessionState,
+                filtersKey,
+                page: pagination.page,
+                willLoad: true
+            });
+            
+            // Criar Promise de loadData e armazenar no ref
+            const loadPromise = (async () => {
+                try {
+                    if (abortController.signal.aborted) {
+                        logger.debug('Appointments - loadData aborted before start', {
+                            effectRunId,
+                            timestamp: Date.now()
+                        });
+                        return;
+                    }
+                    await loadDataAsync(pagination.page);
+                } finally {
+                    // Sempre limpar o ref, mesmo em caso de erro
+                    if (loadDataInFlightRef.current === loadPromise) {
+                        loadDataInFlightRef.current = null;
+                    }
+                    if (loadDataAbortControllerRef.current === abortController) {
+                        loadDataAbortControllerRef.current = null;
+                    }
+                }
+            })();
+            
+            loadDataInFlightRef.current = loadPromise;
+            await loadPromise;
         };
         
         loadDataAfterSessionCheck();
         
         return () => {
+            // Abortar ao desmontar ou quando dependências mudarem
             abortController.abort();
+            if (loadDataAbortControllerRef.current === abortController) {
+                loadDataAbortControllerRef.current = null;
+            }
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [pagination.page, filtersKey, sessionReady]);
+    }, [pagination.page, filtersKey, sessionState, loadDataAsync]);
 
     // Close suggestions when clicking outside
     useEffect(() => {
@@ -1010,16 +1175,26 @@ const Appointments: React.FC = () => {
 
     // Função de submit reutilizável que pode ser chamada de diferentes formas
     const performSubmit = async (): Promise<void> => {
+        const submitId = ++submitIdCounterRef.current;
         const startTimestamp = Date.now();
         
         // Prevenir múltiplos submits
         if (isSubmitting) {
-            logger.debug('performSubmit called but is already submitting', { timestamp: startTimestamp });
+            logger.debug('performSubmit called but is already submitting', {
+                submitId,
+                timestamp: startTimestamp,
+                isSubmitting: true
+            });
             return;
         }
         
-        logger.info('performSubmit start', { 
+        logger.info('performSubmit start', {
+            submitId,
             timestamp: startTimestamp,
+            visibilityState: document.visibilityState,
+            hasFocus: document.hasFocus(),
+            sessionState,
+            isSubmittingBefore: isSubmitting,
             formData: {
                 date: formData.date,
                 time: formData.time,
@@ -1327,8 +1502,8 @@ const Appointments: React.FC = () => {
                             }
                         );
                         
-                        appointmentId = result.appointmentId;
-                        patientId = result.patientId;
+                            appointmentId = result.appointmentId;
+                            patientId = result.patientId;
                         
                         logger.info('performSubmit - Retry successful', {
                             timestamp: Date.now(),
@@ -1414,14 +1589,17 @@ const Appointments: React.FC = () => {
             const duration = endTimestamp - startTimestamp;
             
             logger.info('performSubmit finished', {
+                submitId,
                 timestamp: endTimestamp,
                 duration,
                 appointmentId,
                 patientId,
-                isEditing
+                isEditing,
+                result: 'success'
             });
             
             logger.info('Draft cleared after successful save', {
+                submitId,
                 timestamp: endTimestamp,
                 appointmentId
             });
@@ -1458,11 +1636,17 @@ const Appointments: React.FC = () => {
             abortControllersRef.current.delete(operationId);
             
             logger.error('performSubmit error', {
+                submitId,
                 error,
                 timestamp: errorTimestamp,
                 duration,
+                visibilityState: document.visibilityState,
+                hasFocus: document.hasFocus(),
+                sessionState,
+                isSubmittingAfter: isSubmitting,
                 context: 'performSubmit',
                 isEditing: !!editingAppointment,
+                result: 'error',
                 formData: {
                     date: formData.date,
                     time: formData.time,
