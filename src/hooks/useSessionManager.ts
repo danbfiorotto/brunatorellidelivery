@@ -65,24 +65,30 @@ export function useSessionManager(config: SessionManagerConfig = {}) {
     const sessionCheckPromiseRef = useRef<Promise<void> | null>(null);
     const initialCheckPromiseRef = useRef<Promise<void> | null>(null);
     const checkIdCounterRef = useRef<number>(0); // Contador para IDs de verificação
+    const currentCheckIdRef = useRef<number>(0); // ID do check atual (para garantir finally correto)
+    const didInitRef = useRef<boolean>(false); // Prevenir múltiplos checks "initial"
     const [sessionState, setSessionState] = useState<'loading' | 'ready' | 'invalid'>('loading');
-    const SAFETY_TIMEOUT_MS = 30000; // 30 segundos
+    const SESSION_CHECK_TIMEOUT_MS = 5000; // 5 segundos (session check deve ser rápido - apenas getSession local)
+    const REFRESH_TIMEOUT_MS = 8000; // 8 segundos para refresh (requer rede)
     
     /**
      * Verifica e atualiza a sessão se necessário
      * Usa Promise compartilhada (singleflight) + throttle real para evitar verificações concorrentes e frequentes
+     * Session check é rápido (apenas getSession local) - timeout de 5s
+     * Refresh só acontece se necessário e tem timeout de 8s
      */
     const checkAndRefreshSession = useCallback(async (force: boolean = false, reason: string = 'unknown'): Promise<void> => {
         const now = Date.now();
         const checkId = ++checkIdCounterRef.current;
         const timeSinceLastOk = now - lastOkAtRef.current;
+        const inFlight = !!sessionCheckPromiseRef.current;
         
         logger.info('useSessionManager - Session check requested', {
             checkId,
             reason,
             timestamp: now,
             force,
-            inFlight: !!sessionCheckPromiseRef.current,
+            inFlight, // Logar ANTES de verificar (deve ser false se não há check ativo)
             lastOkAt: lastOkAtRef.current,
             timeSinceLastOk,
             sessionState
@@ -115,155 +121,217 @@ export function useSessionManager(config: SessionManagerConfig = {}) {
                 logger.debug('useSessionManager - Previous check had error (ignored)', {
                     checkId,
                     reason,
-                    timestamp: now
+                    timestamp: now,
+                    error: error instanceof Error ? error.message : String(error)
                 });
             }
             return;
         }
         
         const checkTimestamp = now;
+        currentCheckIdRef.current = checkId; // Armazenar ID do check atual
         
-        // Criar nova Promise de verificação com timeout de segurança
+        // Criar nova Promise de verificação com timeout curto (session check deve ser rápido)
         const checkPromise = (async (): Promise<void> => {
-            let timeoutId: ReturnType<typeof setTimeout> | null = null;
+            let getSessionTimeoutId: ReturnType<typeof setTimeout> | null = null;
+            let refreshTimeoutId: ReturnType<typeof setTimeout> | null = null;
             
             try {
-                // Timeout de segurança para evitar Promises travadas
-                const timeoutPromise = new Promise<never>((_, reject) => {
-                    timeoutId = setTimeout(() => {
-                        logger.warn('useSessionManager - Session check timeout (30s), aborting', {
-                            timestamp: Date.now()
-                        });
-                        reject(new Error('Session check timeout'));
-                    }, SAFETY_TIMEOUT_MS);
+                logger.info('useSessionManager - Checking session (getSession - local, fast)', {
+                    checkId,
+                    reason,
+                    timestamp: checkTimestamp,
+                    operation: 'getSession'
                 });
                 
-                // Race entre verificação e timeout
-                await Promise.race([
-                    (async () => {
-                        logger.info('useSessionManager - Checking session', {
-                            checkId,
-                            reason,
-                            timestamp: checkTimestamp
-                        });
-                        const authClient = container.resolve('authClient') as IAuthClient | undefined;
-                        
-                        if (!authClient) {
-                            logger.warn('useSessionManager - authClient not found', {
-                                checkId,
-                                reason,
-                                timestamp: checkTimestamp
-                            });
-                            setSessionState('invalid');
-                            return;
-                        }
-                        
-                        const session = await authClient.getSession();
-                        
-                        if (!session?.user) {
-                            logger.warn('useSessionManager - Session expired', {
-                                checkId,
-                                reason,
-                                timestamp: checkTimestamp,
-                                hasSession: !!session,
-                                result: 'invalid'
-                            });
-                            setSessionState('invalid');
-                            onSessionExpired?.();
-                            return;
-                        }
-                        
-                        // Marcar sessão como pronta
-                        logger.info('useSessionManager - Session valid', {
-                            checkId,
-                            reason,
-                            timestamp: checkTimestamp,
-                            userId: session.user.id,
-                            result: 'ok'
-                        });
-                        setSessionState('ready');
-                        
-                        // Tentar refresh se disponível e passou tempo suficiente
-                        const timeSinceLastCheck = Date.now() - lastCheckRef.current;
-                        
-                        if (timeSinceLastCheck > checkInterval && authClient.refreshSession) {
-                            try {
-                                logger.info('useSessionManager - Refreshing session', {
-                                    checkId,
-                                    reason,
-                                    timestamp: Date.now(),
-                                    timeSinceLastCheck,
-                                    result: 'refresh'
-                                });
-                                await authClient.refreshSession();
-                                logger.info('useSessionManager - Session refreshed successfully', {
-                                    checkId,
-                                    reason,
-                                    timestamp: Date.now(),
-                                    userId: session.user.id,
-                                    result: 'refresh_ok'
-                                });
-                                
-                                // Reobter serviços após refresh (podem ter tokens expirados)
-                                onReinitializeServices?.();
-                                
-                                // Notificar callback de refresh
-                                onSessionRefresh?.();
-                            } catch (error) {
-                                logger.error('useSessionManager - Session refresh failed', {
-                                    checkId,
-                                    reason,
-                                    error,
-                                    timestamp: Date.now(),
-                                    result: 'refresh_failed',
-                                    context: 'useSessionManager.refreshSession'
-                                });
-                            }
-                        } else {
-                            logger.debug('useSessionManager - Session valid, no refresh needed', {
-                                checkId,
-                                reason,
-                                timestamp: Date.now(),
-                                timeSinceLastCheck,
-                                checkInterval,
-                                result: 'ok_no_refresh'
-                            });
-                        }
-                        
-                        // Atualizar timestamps apenas se sessão foi validada com sucesso
-                        lastCheckRef.current = Date.now();
-                        lastOkAtRef.current = Date.now();
-                        
-                        logger.info('useSessionManager - Session check completed', {
+                const authClient = container.resolve('authClient') as IAuthClient | undefined;
+                
+                if (!authClient) {
+                    logger.warn('useSessionManager - authClient not found', {
+                        checkId,
+                        reason,
+                        timestamp: checkTimestamp
+                    });
+                    setSessionState('invalid');
+                    return;
+                }
+                
+                // 1. getSession (rápido, local) - timeout de 5s
+                const getSessionPromise = authClient.getSession();
+                const getSessionTimeoutPromise = new Promise<never>((_, reject) => {
+                    getSessionTimeoutId = setTimeout(() => {
+                        logger.warn('useSessionManager - getSession timeout (5s)', {
                             checkId,
                             reason,
                             timestamp: Date.now(),
-                            duration: Date.now() - checkTimestamp,
-                            result: 'ok',
-                            lastOkAt: lastOkAtRef.current
+                            operation: 'getSession'
                         });
-                    })(),
-                    timeoutPromise
-                ]);
+                        reject(new Error('getSession timeout'));
+                    }, SESSION_CHECK_TIMEOUT_MS);
+                });
+                
+                const session = await Promise.race([getSessionPromise, getSessionTimeoutPromise]);
+                
+                // Limpar timeout de getSession
+                if (getSessionTimeoutId) {
+                    clearTimeout(getSessionTimeoutId);
+                    getSessionTimeoutId = null;
+                }
+                
+                if (!session?.user) {
+                    logger.warn('useSessionManager - Session expired', {
+                        checkId,
+                        reason,
+                        timestamp: checkTimestamp,
+                        hasSession: !!session,
+                        result: 'invalid'
+                    });
+                    setSessionState('invalid');
+                    onSessionExpired?.();
+                    return;
+                }
+                
+                // Marcar sessão como pronta (getSession foi bem-sucedido)
+                logger.info('useSessionManager - Session valid (getSession success)', {
+                    checkId,
+                    reason,
+                    timestamp: checkTimestamp,
+                    userId: session.user.id,
+                    result: 'ok',
+                    operation: 'getSession'
+                });
+                setSessionState('ready');
+                lastCheckRef.current = Date.now();
+                lastOkAtRef.current = Date.now();
+                
+                // 2. Refresh opcional (só se necessário e passou tempo suficiente) - timeout de 8s
+                const timeSinceLastCheck = Date.now() - lastCheckRef.current;
+                
+                if (timeSinceLastCheck > checkInterval && authClient.refreshSession) {
+                    try {
+                        logger.info('useSessionManager - Refreshing session (refreshSession - network)', {
+                            checkId,
+                            reason,
+                            timestamp: Date.now(),
+                            timeSinceLastCheck,
+                            operation: 'refreshSession'
+                        });
+                        
+                        const refreshPromise = authClient.refreshSession();
+                        const refreshTimeoutPromise = new Promise<never>((_, reject) => {
+                            refreshTimeoutId = setTimeout(() => {
+                                logger.warn('useSessionManager - refreshSession timeout (8s)', {
+                                    checkId,
+                                    reason,
+                                    timestamp: Date.now(),
+                                    operation: 'refreshSession'
+                                });
+                                reject(new Error('refreshSession timeout'));
+                            }, REFRESH_TIMEOUT_MS);
+                        });
+                        
+                        await Promise.race([refreshPromise, refreshTimeoutPromise]);
+                        
+                        // Limpar timeout de refresh
+                        if (refreshTimeoutId) {
+                            clearTimeout(refreshTimeoutId);
+                            refreshTimeoutId = null;
+                        }
+                        
+                        logger.info('useSessionManager - Session refreshed successfully', {
+                            checkId,
+                            reason,
+                            timestamp: Date.now(),
+                            userId: session.user.id,
+                            result: 'refresh_ok',
+                            operation: 'refreshSession'
+                        });
+                        
+                        // Reobter serviços após refresh (podem ter tokens expirados)
+                        onReinitializeServices?.();
+                        
+                        // Notificar callback de refresh
+                        onSessionRefresh?.();
+                    } catch (refreshError) {
+                        // Refresh falhou, mas getSession foi OK - não marcar como invalid
+                        logger.warn('useSessionManager - Session refresh failed (but getSession was OK)', {
+                            checkId,
+                            reason,
+                            error: refreshError,
+                            timestamp: Date.now(),
+                            result: 'refresh_failed_but_session_ok',
+                            operation: 'refreshSession'
+                        });
+                        // Não marcar como invalid - getSession foi OK, refresh é opcional
+                    }
+                } else {
+                    logger.debug('useSessionManager - Session valid, no refresh needed', {
+                        checkId,
+                        reason,
+                        timestamp: Date.now(),
+                        timeSinceLastCheck,
+                        checkInterval,
+                        result: 'ok_no_refresh'
+                    });
+                }
+                
+                logger.info('useSessionManager - Session check completed', {
+                    checkId,
+                    reason,
+                    timestamp: Date.now(),
+                    duration: Date.now() - checkTimestamp,
+                    result: 'ok',
+                    lastOkAt: lastOkAtRef.current
+                });
             } catch (error) {
+                const errorMessage = error instanceof Error ? error.message : String(error);
+                const isTimeout = errorMessage.includes('timeout');
+                
                 logger.error('useSessionManager - Session check failed', {
                     checkId,
                     reason,
                     error,
                     timestamp: Date.now(),
                     duration: Date.now() - checkTimestamp,
-                    result: 'error',
+                    result: isTimeout ? 'timeout' : 'error',
+                    isTimeout,
                     context: 'useSessionManager.checkAndRefreshSession'
                 });
-                setSessionState('invalid');
+                
+                // NÃO marcar como invalid em timeout - pode ser Safari hibernando
+                // Apenas manter estado atual (loading ou ready se já estava)
+                if (!isTimeout) {
+                    setSessionState('invalid');
+                } else {
+                    logger.info('useSessionManager - Timeout detected, keeping current state (may be Safari hibernating)', {
+                        checkId,
+                        reason,
+                        currentState: sessionState
+                    });
+                }
+                
                 throw error;
             } finally {
-                // Sempre limpar timeout e Promise, mesmo em caso de erro
-                if (timeoutId) {
-                    clearTimeout(timeoutId);
+                // FINALLY BLINDADO: sempre limpar timeouts e Promise, mesmo em caso de erro/abort
+                if (getSessionTimeoutId) {
+                    clearTimeout(getSessionTimeoutId);
                 }
-                // Limpar a Promise do ref para permitir nova verificação
-                sessionCheckPromiseRef.current = null;
+                if (refreshTimeoutId) {
+                    clearTimeout(refreshTimeoutId);
+                }
+                
+                // Só limpar Promise se este ainda é o check atual (evitar race condition)
+                if (currentCheckIdRef.current === checkId) {
+                    sessionCheckPromiseRef.current = null;
+                    currentCheckIdRef.current = 0;
+                }
+                
+                logger.debug('useSessionManager - Check cleanup completed', {
+                    checkId,
+                    reason,
+                    timestamp: Date.now(),
+                    promiseCleared: currentCheckIdRef.current === 0
+                });
             }
         })();
         
@@ -396,14 +464,26 @@ export function useSessionManager(config: SessionManagerConfig = {}) {
         // Online/Offline
         window.addEventListener('online', handleOnline);
         
-        // Verificação inicial - forçar verificação mesmo se recente
-        const initialPromise = checkAndRefreshSession(true, 'initial').catch((error) => {
-            logger.error('useSessionManager - Initial session check failed', {
-                error,
+        // Verificação inicial - apenas uma vez por mount real (prevenir múltiplos em StrictMode)
+        if (!didInitRef.current) {
+            didInitRef.current = true;
+            logger.info('useSessionManager - Running initial session check', {
+                timestamp: Date.now(),
+                isFirstInit: true
+            });
+            
+            const initialPromise = checkAndRefreshSession(true, 'initial').catch((error) => {
+                logger.error('useSessionManager - Initial session check failed', {
+                    error,
+                    timestamp: Date.now()
+                });
+            });
+            initialCheckPromiseRef.current = initialPromise;
+        } else {
+            logger.debug('useSessionManager - Skipping initial check (already initialized)', {
                 timestamp: Date.now()
             });
-        });
-        initialCheckPromiseRef.current = initialPromise;
+        }
         
         // Cleanup
         return () => {

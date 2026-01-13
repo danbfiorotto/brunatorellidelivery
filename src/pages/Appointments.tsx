@@ -1329,21 +1329,32 @@ const Appointments: React.FC = () => {
                 return;
             }
             
-            // Revalidar sessão ANTES de tentar salvar usando checkSession (singleflight + throttle)
-            try {
-                logger.info('performSubmit - Validating session', { timestamp: Date.now() });
-                await checkSession(true); // Forçar verificação antes de salvar
-                logger.info('performSubmit - Session validated', { timestamp: Date.now() });
-            } catch (sessionError) {
-                logger.error('performSubmit - Session validation failed', {
-                    error: sessionError,
+            // Revalidar sessão ANTES de tentar salvar - mas só se necessário
+            // Se já está ready, não precisa validar novamente (evita cair em check pendurado)
+            if (sessionState !== 'ready') {
+                try {
+                    logger.info('performSubmit - Validating session (sessionState is not ready)', {
+                        timestamp: Date.now(),
+                        sessionState
+                    });
+                    await checkSession(true, 'submit'); // Forçar verificação antes de salvar
+                    logger.info('performSubmit - Session validated', { timestamp: Date.now() });
+                } catch (sessionError) {
+                    logger.error('performSubmit - Session validation failed', {
+                        error: sessionError,
+                        timestamp: Date.now(),
+                        context: 'performSubmit.sessionValidation'
+                    });
+                    showError('Erro ao validar sessão. Por favor, tente novamente.');
+                    setIsSubmitting(false);
+                    abortControllersRef.current.delete(operationId);
+                    return;
+                }
+            } else {
+                logger.debug('performSubmit - Session already ready, skipping validation', {
                     timestamp: Date.now(),
-                    context: 'performSubmit.sessionValidation'
+                    sessionState
                 });
-                showError('Erro ao validar sessão. Por favor, tente novamente.');
-                setIsSubmitting(false);
-                abortControllersRef.current.delete(operationId);
-                return;
             }
             
             // Save radiographs array temporarily
