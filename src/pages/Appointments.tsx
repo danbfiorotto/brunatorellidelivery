@@ -5,6 +5,7 @@ import Card from '../components/UI/Card';
 import Button from '../components/UI/Button';
 import Badge from '../components/UI/Badge';
 import Modal from '../components/UI/Modal';
+import ConfirmDialog from '../components/UI/ConfirmDialog';
 import Input from '../components/UI/Input';
 import DateInput from '../components/UI/DateInput';
 import TimeInput from '../components/UI/TimeInput';
@@ -152,6 +153,7 @@ const Appointments: React.FC = () => {
         totalValue: 0 // Total de valores (recebido + pendente)
     });
     const [filterStatus, setFilterStatus] = useState<FilterStatus>('all');
+    const [deleteConfirm, setDeleteConfirm] = useState<{ isOpen: boolean; id: string | null }>({ isOpen: false, id: null });
     const [searchTerm, setSearchTerm] = useState<string>('');
     const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
     const [pagination, setPagination] = useState<PaginationState>({
@@ -1063,8 +1065,16 @@ const Appointments: React.FC = () => {
                 break;
             case 'date': {
                 // Combine date and time for sorting
-                const aDateTime = new Date(`${a.date}T${a.time || '00:00:00'}`);
-                const bDateTime = new Date(`${b.date}T${b.time || '00:00:00'}`);
+                const aDate = a.date instanceof Date ? a.date : new Date(a.date);
+                const bDate = b.date instanceof Date ? b.date : new Date(b.date);
+                
+                // Format to YYYY-MM-DD for consistency
+                const aISO = aDate.toISOString().split('T')[0];
+                const bISO = bDate.toISOString().split('T')[0];
+                
+                const aDateTime = new Date(`${aISO}T${a.time || '00:00:00'}`);
+                const bDateTime = new Date(`${bISO}T${b.time || '00:00:00'}`);
+                
                 return sortDirection === 'asc' 
                     ? aDateTime.getTime() - bDateTime.getTime() 
                     : bDateTime.getTime() - aDateTime.getTime();
@@ -1131,7 +1141,7 @@ const Appointments: React.FC = () => {
             const procedureExists = procedures.some((p: Procedure) => p.name === appointment.procedure);
             const editFormData: AppointmentFormData = {
                 clinic_id: appointment.clinic_id || '',
-                date: appointment.date || '',
+                date: (appointment as any).dateString || (typeof appointment.date === 'string' ? appointment.date : ''),
                 time: appointment.time || '',
                 patient_name: appointment.patients?.name || '',
                 patient_phone: appointment.patients?.phone ? formatPhoneNumber(appointment.patients.phone) : '',
@@ -1139,12 +1149,12 @@ const Appointments: React.FC = () => {
                 patient_id: appointment.patient_id || '',
                 procedure: procedureExists ? appointment.procedure : 'outros',
                 custom_procedure: procedureExists ? '' : appointment.procedure || '',
-                value: appointment.value ? String(appointment.value.amount) : '',
-                currency: appointment.value?.currency || 'BRL',
-                payment_type: appointment.paymentType?.type || '100',
-                payment_percentage: appointment.paymentType?.percentage ? String(appointment.paymentType.percentage) : '',
+                value: appointment.value ? String((appointment.value as any).amount) : '',
+                currency: (appointment.value as any)?.currency || 'BRL',
+                payment_type: (appointment as any).paymentType?.type || '100',
+                payment_percentage: (appointment as any).paymentType?.percentage ? String((appointment as any).paymentType.percentage) : '',
                 is_paid: appointment.is_paid || appointment.status === 'paid',
-                payment_date: appointment.payment_date || '',
+                payment_date: (appointment as any).paymentDateString || (typeof appointment.payment_date === 'string' ? appointment.payment_date : '') || '',
                 clinical_evolution: appointment.clinical_evolution || '',
                 notes: appointment.notes || '',
                 radiographs: []
@@ -1724,18 +1734,22 @@ const Appointments: React.FC = () => {
         setPatientSuggestions([]);
     };
 
-    const handleDelete = async (id: string): Promise<void> => {
-        if (window.confirm(t('appointments.deleteConfirm'))) {
-            try {
-                await appointmentService.delete(id);
-                showSuccess(t('appointments.deleteSuccess'));
-                loadData();
-                // Recarregar totais após deletar
-                loadTotalStats();
-            } catch (error) {
-                logger.error(error, { context: 'deleteAppointment' });
-                handleError(error, 'Appointments.deleteAppointment');
-            }
+    const handleDelete = (id: string): void => {
+        setDeleteConfirm({ isOpen: true, id });
+    };
+
+    const handleDeleteConfirmed = async (): Promise<void> => {
+        const id = deleteConfirm.id;
+        setDeleteConfirm({ isOpen: false, id: null });
+        if (!id) return;
+        try {
+            await appointmentService.delete(id);
+            showSuccess(t('appointments.deleteSuccess'));
+            loadData();
+            loadTotalStats();
+        } catch (error) {
+            logger.error(error, { context: 'deleteAppointment' });
+            handleError(error, 'Appointments.deleteAppointment');
         }
     };
 
@@ -2806,6 +2820,17 @@ const Appointments: React.FC = () => {
                     </div>
                 </form>
             </Modal>
+
+            <ConfirmDialog
+                isOpen={deleteConfirm.isOpen}
+                title={t('appointments.deleteTitle') || 'Excluir atendimento'}
+                message={t('appointments.deleteConfirm')}
+                confirmLabel={t('common.delete') || 'Excluir'}
+                cancelLabel={t('common.cancel') || 'Cancelar'}
+                onConfirm={handleDeleteConfirmed}
+                onCancel={() => setDeleteConfirm({ isOpen: false, id: null })}
+                variant="danger"
+            />
         </motion.div>
     );
 };
