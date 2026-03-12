@@ -24,12 +24,22 @@ const DateInput: React.FC<DateInputProps> = ({
     const [isoValue, setIsoValue] = useState<string>('');
     const dateInputRef = useRef<HTMLInputElement>(null);
 
-    // Convert ISO date (YYYY-MM-DD) to Brazilian format (DD/MM/YYYY)
-    const isoToBrazilian = (isoDate: string): string => {
+    // Convert ISO date (YYYY-MM-DD or Date object) to Brazilian format (DD/MM/YYYY)
+    const isoToBrazilian = (isoDate: string | Date): string => {
         if (!isoDate) return '';
-        // Work directly with string to avoid timezone issues
+        
+        let dateStr = '';
+        if (isoDate instanceof Date) {
+            const year = isoDate.getFullYear();
+            const month = String(isoDate.getMonth() + 1).padStart(2, '0');
+            const day = String(isoDate.getDate()).padStart(2, '0');
+            dateStr = `${year}-${month}-${day}`;
+        } else {
+            dateStr = isoDate;
+        }
+
         // ISO format: YYYY-MM-DD
-        const parts = isoDate.split('-');
+        const parts = dateStr.split('-');
         if (parts.length === 3) {
             const year = parts[0];
             const month = parts[1];

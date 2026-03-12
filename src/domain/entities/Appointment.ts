@@ -166,6 +166,13 @@ export class Appointment {
     get date(): Date {
         return this._date;
     }
+
+    get dateString(): string {
+        const year = this._date.getFullYear();
+        const month = String(this._date.getMonth() + 1).padStart(2, '0');
+        const day = String(this._date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
     
     get time(): string {
         return this._time.toString();
@@ -189,6 +196,14 @@ export class Appointment {
     
     get paymentDate(): Date | null {
         return this._paymentDate;
+    }
+
+    get paymentDateString(): string | null {
+        if (!this._paymentDate) return null;
+        const year = this._paymentDate.getFullYear();
+        const month = String(this._paymentDate.getMonth() + 1).padStart(2, '0');
+        const day = String(this._paymentDate.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
     }
     
     get status(): string {
