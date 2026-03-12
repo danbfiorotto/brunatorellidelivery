@@ -8,6 +8,7 @@ import Modal from '../components/UI/Modal';
 import ConfirmDialog from '../components/UI/ConfirmDialog';
 import Input from '../components/UI/Input';
 import DateInput from '../components/UI/DateInput';
+import SearchableSelect from '../components/UI/SearchableSelect';
 import TimeInput from '../components/UI/TimeInput';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/UI/Table';
 import Pagination from '../components/UI/Pagination';
@@ -2171,17 +2172,13 @@ const Appointments: React.FC = () => {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                             <label className="block text-sm font-semibold text-slate-700 dark:text-gray-300 mb-2">{t('appointments.clinicRequired')}</label>
-                            <select
-                                className="w-full px-4 py-3 bg-white dark:bg-gray-800 text-slate-900 dark:text-white border border-gray-200 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-4 focus:ring-sky-500/10 focus:border-sky-500 transition-all"
+                            <SearchableSelect
+                                options={clinics.map((clinic: Clinic) => ({ value: clinic.id, label: clinic.name }))}
                                 value={formData.clinic_id}
-                                onChange={(e: ChangeEvent<HTMLSelectElement>) => setFormData({ ...formData, clinic_id: e.target.value })}
+                                onChange={(val) => setFormData({ ...formData, clinic_id: val })}
+                                placeholder={t('appointments.selectClinic')}
                                 required
-                            >
-                                <option value="">Selecione uma clínica</option>
-                                {clinics.map((clinic: Clinic) => (
-                                    <option key={clinic.id} value={clinic.id}>{clinic.name}</option>
-                                ))}
-                            </select>
+                            />
                         </div>
                         <div>
                             <DateInput

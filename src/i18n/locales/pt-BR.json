@@ -105,6 +105,8 @@
     "cancel": "Cancelar",
     "deleteConfirm": "Tem certeza que deseja excluir este atendimento?",
     "deleteSuccess": "Atendimento excluído com sucesso!",
+    "createSuccess": "Atendimento criado com sucesso!",
+    "updateSuccess": "Atendimento atualizado com sucesso!",
     "saveSuccess": "Atendimento salvo com sucesso!",
     "saveError": "Erro ao salvar atendimento",
     "deleteError": "Erro ao excluir atendimento",
