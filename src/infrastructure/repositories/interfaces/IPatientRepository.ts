@@ -13,7 +13,7 @@ export interface IPatientRepository {
     /**
      * Busca um paciente por ID
      */
-    findById(id: string): Promise<Patient | null>;
+    findById(id: string, options?: { includeAppointments?: boolean; includeClinic?: boolean }): Promise<Patient | null>;
 
     /**
      * Busca pacientes por nome ou email

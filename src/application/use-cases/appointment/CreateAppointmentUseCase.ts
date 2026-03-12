@@ -173,7 +173,7 @@ export class CreateAppointmentUseCase implements ICreateAppointmentUseCase {
      */
     private async updatePatientLastVisit(patientId: string, date: Date | string): Promise<void> {
         try {
-            const patient = await this.patientRepository.findById(patientId);
+            const patient = await this.patientRepository.findById(patientId, { includeAppointments: false, includeClinic: false });
             if (patient) {
                 patient.updateLastVisit(date);
                 await this.patientRepository.update(patientId, patient);

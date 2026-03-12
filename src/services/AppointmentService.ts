@@ -306,11 +306,11 @@ export class AppointmentService implements IAppointmentService {
         });
         
         try {
-            const patient = await this.patientRepository.findById(patientId);
+            const patient = await this.patientRepository.findById(patientId, { includeAppointments: false, includeClinic: false });
             if (patient) {
                 patient.updateLastVisit(date);
                 await this.patientRepository.update(patientId, patient);
-                
+
                 logger.info('AppointmentService.updatePatientLastVisit - Success', {
                     patientId,
                     date,

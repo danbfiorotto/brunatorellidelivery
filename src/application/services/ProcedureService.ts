@@ -3,8 +3,6 @@ import { IAuditService } from '../../infrastructure/audit/IAuditService';
 import { getCSRFToken } from '../../lib/csrf';
 import { logger } from '../../lib/logger';
 import { DatabaseAdapter } from '../../infrastructure/database/DatabaseAdapter';
-import { requireAuth, getSession } from '../../lib/auth';
-import { apiRateLimiter } from '../../lib/rateLimiter';
 
 interface Procedure {
     id: string;
@@ -27,7 +25,7 @@ interface ProcedureData {
 
 /**
  * Serviço para operações de procedimentos.
- * 
+ *
  * Gerencia CRUD de procedimentos médicos, incluindo criação, atualização
  * e busca de procedimentos ativos ordenados por display_order.
  */
@@ -42,14 +40,6 @@ export class ProcedureService {
      */
     async getAll(): Promise<Procedure[]> {
         try {
-            await requireAuth();
-            const session = await getSession();
-            const userId = session?.user?.id || 'anonymous';
-
-            if (!apiRateLimiter.canMakeRequest(userId)) {
-                throw new Error('Muitas requisições. Aguarde um momento.');
-            }
-
             const data = await this.db.table('procedures')
                 .select('*')
                 .where('is_active', true)
@@ -67,14 +57,6 @@ export class ProcedureService {
      */
     async getById(id: string): Promise<Procedure | null> {
         try {
-            await requireAuth();
-            const session = await getSession();
-            const userId = session?.user?.id || 'anonymous';
-
-            if (!apiRateLimiter.canMakeRequest(userId)) {
-                throw new Error('Muitas requisições. Aguarde um momento.');
-            }
-
             try {
                 const data = await this.db.table('procedures')
                     .select('*')
@@ -99,15 +81,6 @@ export class ProcedureService {
      */
     async create(procedure: ProcedureData): Promise<Procedure> {
         try {
-            await requireAuth();
-            const session = await getSession();
-            const userId = session?.user?.id || 'anonymous';
-
-            if (!apiRateLimiter.canMakeRequest(userId)) {
-                throw new Error('Muitas requisições. Aguarde um momento.');
-            }
-
-            // Validar CSRF
             const token = getCSRFToken();
             if (!token) {
                 throw new Error('Token CSRF não encontrado. Por favor, recarregue a página.');
@@ -137,15 +110,6 @@ export class ProcedureService {
      */
     async update(id: string, procedure: ProcedureData): Promise<Procedure> {
         try {
-            await requireAuth();
-            const session = await getSession();
-            const userId = session?.user?.id || 'anonymous';
-
-            if (!apiRateLimiter.canMakeRequest(userId)) {
-                throw new Error('Muitas requisições. Aguarde um momento.');
-            }
-
-            // Validar CSRF
             const token = getCSRFToken();
             if (!token) {
                 throw new Error('Token CSRF não encontrado. Por favor, recarregue a página.');
@@ -171,4 +135,3 @@ export class ProcedureService {
         }
     }
 }
-
