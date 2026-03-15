@@ -217,14 +217,15 @@ export class QueryBuilder {
      * so WHERE conditions stored in whereConditions[] are reapplied after .update().
      */
     async update<T = unknown>(data: unknown): Promise<T> {
-        let query: ReturnType<SupabaseClient['from']> =
-            this.client.from(this.tableName).update(data as object).select() as any;
+        // Supabase requires: .update(data).eq(field, value).select()
+        // .select() must come AFTER the filters, not before
+        let query: any = this.client.from(this.tableName).update(data as object);
 
         for (const { field, operator, value } of this.whereConditions) {
             query = this.applyOperator(query, field, operator, value);
         }
 
-        const { data: result, error } = await (query as any);
+        const { data: result, error } = await query.select();
         if (error) {
             throw new DatabaseError(
                 `Erro ao atualizar na tabela ${this.tableName}: ${error.message}`,
