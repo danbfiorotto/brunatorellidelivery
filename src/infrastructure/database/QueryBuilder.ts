@@ -51,6 +51,16 @@ export class QueryBuilder {
     }
 
     /**
+     * Checks whether the underlying Supabase query object supports filter
+     * methods (eq, gt, etc.).  `client.from(table)` returns a PostgrestQueryBuilder
+     * which does NOT have filter methods — they only become available after
+     * calling .select(), .update(), .insert(), or .delete().
+     */
+    private queryHasFilterMethods(): boolean {
+        return typeof (this.query as any).eq === 'function';
+    }
+
+    /**
      * Applies a single operator to a Supabase query object and returns the new query.
      * Centralises the operator dispatch used by whereOperator() and update().
      */
@@ -88,8 +98,13 @@ export class QueryBuilder {
     /**
      * Adiciona condição WHERE com operador de igualdade ou objeto de operadores.
      * Note: ilike/like are applied to SELECT queries only — not persisted for UPDATE.
+     *
+     * When called before .select() (e.g. for .update() flows), the filter is
+     * only stored in whereConditions and will be reapplied inside update().
      */
     where(field: string, value: WhereValue): this {
+        const canFilter = this.queryHasFilterMethods();
+
         if (value && typeof value === 'object' && !Array.isArray(value) && !(value instanceof Date)) {
             const valueObj = value as {
                 gte?: unknown; lte?: unknown; gt?: unknown; lt?: unknown;
@@ -98,11 +113,15 @@ export class QueryBuilder {
 
             // ilike/like: applied to this.query for SELECT but not stored for UPDATE
             if (valueObj.ilike !== undefined) {
-                this.query = this.applyOperator(this.query, field, 'ilike', valueObj.ilike);
+                if (canFilter) {
+                    this.query = this.applyOperator(this.query, field, 'ilike', valueObj.ilike);
+                }
                 return this;
             }
             if (valueObj.like !== undefined) {
-                this.query = this.applyOperator(this.query, field, 'like', valueObj.like);
+                if (canFilter) {
+                    this.query = this.applyOperator(this.query, field, 'like', valueObj.like);
+                }
                 return this;
             }
 
@@ -114,12 +133,16 @@ export class QueryBuilder {
             ];
             for (const [op, val] of ops) {
                 if (val !== undefined) {
-                    this.query = this.applyOperator(this.query, field, op, val);
+                    if (canFilter) {
+                        this.query = this.applyOperator(this.query, field, op, val);
+                    }
                     this.whereConditions.push({ field, operator: op, value: val });
                 }
             }
         } else {
-            this.query = this.applyOperator(this.query, field, 'eq', value);
+            if (canFilter) {
+                this.query = this.applyOperator(this.query, field, 'eq', value);
+            }
             this.whereConditions.push({ field, operator: 'eq', value });
         }
         return this;
@@ -128,9 +151,14 @@ export class QueryBuilder {
     /**
      * Adiciona condição WHERE com operador customizado.
      * Note: like/ilike/is are not stored for UPDATE — only UPDATE_SAFE_OPERATORS are persisted.
+     *
+     * When called before .select() (e.g. for .update() flows), the filter is
+     * only stored in whereConditions and will be reapplied inside update().
      */
     whereOperator(field: string, operator: QueryOperator, value: unknown): this {
-        this.query = this.applyOperator(this.query, field, operator, value);
+        if (this.queryHasFilterMethods()) {
+            this.query = this.applyOperator(this.query, field, operator, value);
+        }
         if (UPDATE_SAFE_OPERATORS.has(operator)) {
             this.whereConditions.push({ field, operator, value });
         }
