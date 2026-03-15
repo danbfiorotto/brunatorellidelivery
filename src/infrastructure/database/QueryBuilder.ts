@@ -1,6 +1,5 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import { DatabaseError } from '../../domain/errors/AppError';
-import { WhereStrategyFactory, EqStrategy } from './strategies/WhereStrategy';
 
 type WhereValue = {
     gte?: unknown;
@@ -31,6 +30,12 @@ export interface QueryResultWithCount<T> {
     count: number | null;
 }
 
+interface WhereCondition {
+    field: string;
+    operator: QueryOperator;
+    value: unknown;
+}
+
 /**
  * Builder para construir queries de forma fluente
  */
@@ -39,6 +44,7 @@ export class QueryBuilder {
     private tableName: string;
     private query: ReturnType<SupabaseClient['from']>;
     private countMode: 'exact' | 'planned' | 'estimated' | null = null;
+    private whereConditions: WhereCondition[] = [];
 
     /**
      * Cria uma instância do QueryBuilder
@@ -68,105 +74,99 @@ export class QueryBuilder {
 
     /**
      * Adiciona condição WHERE com operador de igualdade
-     * ✅ Refatorado usando Strategy Pattern para melhor manutenibilidade
      */
     where(field: string, value: WhereValue): this {
-        // ✅ Garantir que this.query está inicializado corretamente
         if (!this.query) {
             this.query = this.client.from(this.tableName);
         }
-        
+
         if (value && typeof value === 'object' && !Array.isArray(value) && !(value instanceof Date)) {
-            const valueObj = value as { 
-                gte?: unknown; 
-                lte?: unknown; 
-                gt?: unknown; 
+            const valueObj = value as {
+                gte?: unknown;
+                lte?: unknown;
+                gt?: unknown;
                 lt?: unknown;
                 ilike?: string;
                 like?: string;
                 eq?: unknown;
                 in?: unknown[];
             };
-            
-            // ✅ Usar Strategy Pattern para aplicar o operador apropriado
-            const strategy = WhereStrategyFactory.getStrategyByPriority(valueObj);
-            
-            if (strategy) {
-                // Determinar o valor a ser usado baseado na prioridade
-                const strategyValue = 
-                    valueObj.ilike ?? 
-                    valueObj.like ?? 
-                    valueObj.gte ?? 
-                    valueObj.lte ?? 
-                    valueObj.gt ?? 
-                    valueObj.lt ?? 
-                    valueObj.eq ?? 
-                    valueObj.in ?? 
-                    value;
-                
-                this.query = strategy.apply(this.query, field, strategyValue);
+
+            // Aplicar todos os operadores presentes e guardar para reuso no update
+            if (valueObj.ilike !== undefined) {
+                this.query = this.query.ilike(field, valueObj.ilike as string);
+            } else if (valueObj.like !== undefined) {
+                this.query = this.query.like(field, valueObj.like as string);
             } else {
-                // Fallback para igualdade se nenhuma estratégia encontrada
-                const eqStrategy = new EqStrategy();
-                this.query = eqStrategy.apply(this.query, field, value);
+                if (valueObj.gte !== undefined) {
+                    this.query = this.query.gte(field, valueObj.gte);
+                    this.whereConditions.push({ field, operator: 'gte', value: valueObj.gte });
+                }
+                if (valueObj.lte !== undefined) {
+                    this.query = this.query.lte(field, valueObj.lte);
+                    this.whereConditions.push({ field, operator: 'lte', value: valueObj.lte });
+                }
+                if (valueObj.gt !== undefined) {
+                    this.query = this.query.gt(field, valueObj.gt);
+                    this.whereConditions.push({ field, operator: 'gt', value: valueObj.gt });
+                }
+                if (valueObj.lt !== undefined) {
+                    this.query = this.query.lt(field, valueObj.lt);
+                    this.whereConditions.push({ field, operator: 'lt', value: valueObj.lt });
+                }
+                if (valueObj.eq !== undefined) {
+                    this.query = this.query.eq(field, valueObj.eq);
+                    this.whereConditions.push({ field, operator: 'eq', value: valueObj.eq });
+                }
+                if (valueObj.in !== undefined && Array.isArray(valueObj.in)) {
+                    this.query = this.query.in(field, valueObj.in);
+                    this.whereConditions.push({ field, operator: 'in', value: valueObj.in });
+                }
             }
         } else {
-            // Valor simples: usar estratégia de igualdade
-            const eqStrategy = new EqStrategy();
-            this.query = eqStrategy.apply(this.query, field, value);
+            this.query = this.query.eq(field, value);
+            this.whereConditions.push({ field, operator: 'eq', value });
         }
         return this;
     }
 
     /**
      * Adiciona condição WHERE com operador customizado
-     * Suporta encadeamento para múltiplos filtros
      */
     whereOperator(field: string, operator: QueryOperator, value: unknown): this {
-        // ✅ Garantir que this.query está no estado correto antes de aplicar operadores
-        // Se a query não tiver os métodos necessários, reinicializar
-        if (!this.query || typeof (this.query as any).eq !== 'function') {
+        if (!this.query) {
             this.query = this.client.from(this.tableName);
         }
-        
-        try {
-            // ✅ Verificar novamente antes de usar (pode ter mudado entre a verificação anterior e aqui)
-            if (!this.query || typeof (this.query as any).eq !== 'function') {
-                this.query = this.client.from(this.tableName);
-            }
-            
-            if (operator === 'eq') {
-                this.query = this.query.eq(field, value);
-            } else if (operator === 'neq') {
-                this.query = this.query.neq(field, value);
-            } else if (operator === 'gt') {
-                this.query = this.query.gt(field, value);
-            } else if (operator === 'gte') {
-                this.query = this.query.gte(field, value);
-            } else if (operator === 'lt') {
-                this.query = this.query.lt(field, value);
-            } else if (operator === 'lte') {
-                this.query = this.query.lte(field, value);
-            } else if (operator === 'like') {
-                this.query = this.query.like(field, value as string);
-            } else if (operator === 'ilike') {
-                this.query = this.query.ilike(field, value as string);
-            } else if (operator === 'in') {
-                this.query = this.query.in(field, value as unknown[]);
-            } else if (operator === 'is') {
-                this.query = this.query.is(field, value);
-            } else {
-                throw new Error(`Operador não suportado: ${operator}`);
-            }
-        } catch (error) {
-            // Se houver erro, tentar reinicializar a query e tentar novamente
-            this.query = this.client.from(this.tableName);
-            if (operator === 'eq') {
-                this.query = this.query.eq(field, value);
-            } else {
-                throw error;
-            }
+
+        if (operator === 'eq') {
+            this.query = this.query.eq(field, value);
+        } else if (operator === 'neq') {
+            this.query = this.query.neq(field, value);
+        } else if (operator === 'gt') {
+            this.query = this.query.gt(field, value);
+        } else if (operator === 'gte') {
+            this.query = this.query.gte(field, value);
+        } else if (operator === 'lt') {
+            this.query = this.query.lt(field, value);
+        } else if (operator === 'lte') {
+            this.query = this.query.lte(field, value);
+        } else if (operator === 'like') {
+            this.query = this.query.like(field, value as string);
+        } else if (operator === 'ilike') {
+            this.query = this.query.ilike(field, value as string);
+        } else if (operator === 'in') {
+            this.query = this.query.in(field, value as unknown[]);
+        } else if (operator === 'is') {
+            this.query = this.query.is(field, value);
+        } else {
+            throw new Error(`Operador não suportado: ${operator}`);
         }
+
+        // Guardar condição para reuso no update (exceto like/ilike/is que não são suportados em update filter)
+        if (['eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'in'].includes(operator)) {
+            this.whereConditions.push({ field, operator: operator as QueryOperator, value });
+        }
+
         return this;
     }
 
@@ -294,41 +294,45 @@ export class QueryBuilder {
 
     /**
      * Executa UPDATE
-     * ✅ Preserva filtros WHERE aplicados anteriormente
+     * ✅ Constrói a query na ordem correta do Supabase: .update(data).eq(field, value)
+     * Os filtros WHERE aplicados anteriormente são reaplicados após o update
      */
     async update<T = unknown>(data: unknown): Promise<T> {
-        // ✅ IMPORTANTE: Quando whereOperator é chamado, ele modifica this.query
-        // O Supabase retorna uma nova query builder após cada operação WHERE
-        // Essa nova query builder DEVE ter o método update() disponível
-        // Se não tiver, significa que a query está em um estado inválido
-        
-        if (!this.query) {
-            this.query = this.client.from(this.tableName);
+        // O Supabase exige a ordem: .from(table).update(data).eq(field, value)
+        // Não é possível fazer .from(table).eq(field, value).update(data)
+        // Por isso reconstruímos a query aplicando os filtros após o update
+        const baseQuery = this.client.from(this.tableName).update(data as object).select();
+
+        // Reaplicar os filtros WHERE que foram acumulados em this.whereConditions
+        let finalQuery = baseQuery;
+        for (const condition of this.whereConditions) {
+            const { field, operator, value } = condition;
+            if (operator === 'eq') {
+                finalQuery = (finalQuery as any).eq(field, value);
+            } else if (operator === 'neq') {
+                finalQuery = (finalQuery as any).neq(field, value);
+            } else if (operator === 'gt') {
+                finalQuery = (finalQuery as any).gt(field, value);
+            } else if (operator === 'gte') {
+                finalQuery = (finalQuery as any).gte(field, value);
+            } else if (operator === 'lt') {
+                finalQuery = (finalQuery as any).lt(field, value);
+            } else if (operator === 'lte') {
+                finalQuery = (finalQuery as any).lte(field, value);
+            } else if (operator === 'in') {
+                finalQuery = (finalQuery as any).in(field, value);
+            }
         }
-        
-        // Verificar se a query tem o método update
-        // Se whereOperator foi chamado, a query deve ter update disponível
-        if (typeof (this.query as any).update !== 'function') {
-            // Se não tem update, a query pode estar em um estado inválido
-            // Tentar reconstruir a query (mas perdemos os filtros WHERE)
-            // Isso indica um problema na forma como estamos encadeando as operações
-            throw new DatabaseError(
-                `Erro ao atualizar na tabela ${this.tableName}: Query não está no estado correto para update. ` +
-                `A query foi modificada por whereOperator mas não tem o método update disponível. ` +
-                `Isso pode indicar um problema no encadeamento de operações.`,
-                new Error('Query state invalid for update')
-            );
-        }
-        
-        const { data: result, error } = await this.query.update(data).select();
-        
+
+        const { data: result, error } = await finalQuery;
+
         if (error) {
             throw new DatabaseError(
                 `Erro ao atualizar na tabela ${this.tableName}: ${error.message}`,
                 error
             );
         }
-        
+
         return result as T;
     }
 
