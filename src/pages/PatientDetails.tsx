@@ -196,8 +196,9 @@ const PatientDetails: React.FC = () => {
         
         try {
             const dataToSave = {
-                ...formData,
-                phone: unformatPhoneNumber(formData.phone)
+                name: formData.name,
+                email: formData.email.trim() || null,
+                phone: unformatPhoneNumber(formData.phone) || null
             };
             await patientService.update(id, dataToSave);
             setIsEditModalOpen(false);
