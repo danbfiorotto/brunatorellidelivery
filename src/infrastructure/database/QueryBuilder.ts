@@ -14,17 +14,14 @@ type WhereValue = {
 
 type QueryOperator = 'eq' | 'neq' | 'gt' | 'gte' | 'lt' | 'lte' | 'like' | 'ilike' | 'in' | 'is';
 
-/**
- * Options for select query with count support
- */
+// Operators that Supabase supports as UPDATE filters
+const UPDATE_SAFE_OPERATORS = new Set<QueryOperator>(['eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'in']);
+
 interface SelectOptions {
     count?: 'exact' | 'planned' | 'estimated';
     head?: boolean;
 }
 
-/**
- * Result with data and optional count
- */
 export interface QueryResultWithCount<T> {
     data: T[];
     count: number | null;
@@ -44,11 +41,9 @@ export class QueryBuilder {
     private tableName: string;
     private query: ReturnType<SupabaseClient['from']>;
     private countMode: 'exact' | 'planned' | 'estimated' | null = null;
+    // Conditions persisted for reuse in update() — only UPDATE_SAFE_OPERATORS are stored
     private whereConditions: WhereCondition[] = [];
 
-    /**
-     * Cria uma instância do QueryBuilder
-     */
     constructor(client: SupabaseClient, tableName: string) {
         this.client = client;
         this.tableName = tableName;
@@ -56,16 +51,34 @@ export class QueryBuilder {
     }
 
     /**
-     * Seleciona campos específicos
-     * @param fields - Campos a selecionar
-     * @param options - Opções de select (count, head)
+     * Applies a single operator to a Supabase query object and returns the new query.
+     * Centralises the operator dispatch used by whereOperator() and update().
      */
+    private applyOperator(
+        query: ReturnType<SupabaseClient['from']>,
+        field: string,
+        operator: QueryOperator,
+        value: unknown
+    ): ReturnType<SupabaseClient['from']> {
+        switch (operator) {
+            case 'eq':    return (query as any).eq(field, value);
+            case 'neq':   return (query as any).neq(field, value);
+            case 'gt':    return (query as any).gt(field, value);
+            case 'gte':   return (query as any).gte(field, value);
+            case 'lt':    return (query as any).lt(field, value);
+            case 'lte':   return (query as any).lte(field, value);
+            case 'like':  return (query as any).like(field, value as string);
+            case 'ilike': return (query as any).ilike(field, value as string);
+            case 'in':    return (query as any).in(field, value as unknown[]);
+            case 'is':    return (query as any).is(field, value);
+            default:      throw new Error(`Operador não suportado: ${operator}`);
+        }
+    }
+
     select(fields: string | string[] = '*', options?: SelectOptions): this {
         if (options?.count) {
             this.countMode = options.count;
             this.query = this.query.select(fields, { count: options.count, head: options.head });
-        } else if (typeof fields === 'string' && fields.includes('(')) {
-            this.query = this.query.select(fields);
         } else {
             this.query = this.query.select(fields);
         }
@@ -73,275 +86,156 @@ export class QueryBuilder {
     }
 
     /**
-     * Adiciona condição WHERE com operador de igualdade
+     * Adiciona condição WHERE com operador de igualdade ou objeto de operadores.
+     * Note: ilike/like are applied to SELECT queries only — not persisted for UPDATE.
      */
     where(field: string, value: WhereValue): this {
-        if (!this.query) {
-            this.query = this.client.from(this.tableName);
-        }
-
         if (value && typeof value === 'object' && !Array.isArray(value) && !(value instanceof Date)) {
             const valueObj = value as {
-                gte?: unknown;
-                lte?: unknown;
-                gt?: unknown;
-                lt?: unknown;
-                ilike?: string;
-                like?: string;
-                eq?: unknown;
-                in?: unknown[];
+                gte?: unknown; lte?: unknown; gt?: unknown; lt?: unknown;
+                ilike?: string; like?: string; eq?: unknown; in?: unknown[];
             };
 
-            // Aplicar todos os operadores presentes e guardar para reuso no update
+            // ilike/like: applied to this.query for SELECT but not stored for UPDATE
             if (valueObj.ilike !== undefined) {
-                this.query = this.query.ilike(field, valueObj.ilike as string);
-            } else if (valueObj.like !== undefined) {
-                this.query = this.query.like(field, valueObj.like as string);
-            } else {
-                if (valueObj.gte !== undefined) {
-                    this.query = this.query.gte(field, valueObj.gte);
-                    this.whereConditions.push({ field, operator: 'gte', value: valueObj.gte });
-                }
-                if (valueObj.lte !== undefined) {
-                    this.query = this.query.lte(field, valueObj.lte);
-                    this.whereConditions.push({ field, operator: 'lte', value: valueObj.lte });
-                }
-                if (valueObj.gt !== undefined) {
-                    this.query = this.query.gt(field, valueObj.gt);
-                    this.whereConditions.push({ field, operator: 'gt', value: valueObj.gt });
-                }
-                if (valueObj.lt !== undefined) {
-                    this.query = this.query.lt(field, valueObj.lt);
-                    this.whereConditions.push({ field, operator: 'lt', value: valueObj.lt });
-                }
-                if (valueObj.eq !== undefined) {
-                    this.query = this.query.eq(field, valueObj.eq);
-                    this.whereConditions.push({ field, operator: 'eq', value: valueObj.eq });
-                }
-                if (valueObj.in !== undefined && Array.isArray(valueObj.in)) {
-                    this.query = this.query.in(field, valueObj.in);
-                    this.whereConditions.push({ field, operator: 'in', value: valueObj.in });
+                this.query = this.applyOperator(this.query, field, 'ilike', valueObj.ilike);
+                return this;
+            }
+            if (valueObj.like !== undefined) {
+                this.query = this.applyOperator(this.query, field, 'like', valueObj.like);
+                return this;
+            }
+
+            // Range/equality operators: applied and stored for UPDATE reuse
+            const ops: Array<[QueryOperator, unknown | undefined]> = [
+                ['gte', valueObj.gte], ['lte', valueObj.lte],
+                ['gt',  valueObj.gt],  ['lt',  valueObj.lt],
+                ['eq',  valueObj.eq],  ['in',  Array.isArray(valueObj.in) ? valueObj.in : undefined],
+            ];
+            for (const [op, val] of ops) {
+                if (val !== undefined) {
+                    this.query = this.applyOperator(this.query, field, op, val);
+                    this.whereConditions.push({ field, operator: op, value: val });
                 }
             }
         } else {
-            this.query = this.query.eq(field, value);
+            this.query = this.applyOperator(this.query, field, 'eq', value);
             this.whereConditions.push({ field, operator: 'eq', value });
         }
         return this;
     }
 
     /**
-     * Adiciona condição WHERE com operador customizado
+     * Adiciona condição WHERE com operador customizado.
+     * Note: like/ilike/is are not stored for UPDATE — only UPDATE_SAFE_OPERATORS are persisted.
      */
     whereOperator(field: string, operator: QueryOperator, value: unknown): this {
-        if (!this.query) {
-            this.query = this.client.from(this.tableName);
+        this.query = this.applyOperator(this.query, field, operator, value);
+        if (UPDATE_SAFE_OPERATORS.has(operator)) {
+            this.whereConditions.push({ field, operator, value });
         }
-
-        if (operator === 'eq') {
-            this.query = this.query.eq(field, value);
-        } else if (operator === 'neq') {
-            this.query = this.query.neq(field, value);
-        } else if (operator === 'gt') {
-            this.query = this.query.gt(field, value);
-        } else if (operator === 'gte') {
-            this.query = this.query.gte(field, value);
-        } else if (operator === 'lt') {
-            this.query = this.query.lt(field, value);
-        } else if (operator === 'lte') {
-            this.query = this.query.lte(field, value);
-        } else if (operator === 'like') {
-            this.query = this.query.like(field, value as string);
-        } else if (operator === 'ilike') {
-            this.query = this.query.ilike(field, value as string);
-        } else if (operator === 'in') {
-            this.query = this.query.in(field, value as unknown[]);
-        } else if (operator === 'is') {
-            this.query = this.query.is(field, value);
-        } else {
-            throw new Error(`Operador não suportado: ${operator}`);
-        }
-
-        // Guardar condição para reuso no update (exceto like/ilike/is que não são suportados em update filter)
-        if (['eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'in'].includes(operator)) {
-            this.whereConditions.push({ field, operator: operator as QueryOperator, value });
-        }
-
         return this;
     }
 
-    /**
-     * Adiciona condição IN
-     */
     whereIn(field: string, values: unknown[]): this {
         this.query = this.query.in(field, values);
         return this;
     }
-    
-    /**
-     * Adiciona condição OR (para múltiplas condições)
-     */
+
     or(condition: string): this {
         this.query = this.query.or(condition);
         return this;
     }
 
-    /**
-     * Adiciona ordenação
-     * Suporta encadeamento para múltiplas ordenações
-     */
     orderBy(field: string, direction: 'asc' | 'desc' = 'asc'): this {
-        // O Supabase permite múltiplas ordenações encadeando .order()
         this.query = this.query.order(field, { ascending: direction === 'asc' });
         return this;
     }
 
-    /**
-     * Limita o número de resultados
-     */
     limit(count: number): this {
         this.query = this.query.limit(count);
         return this;
     }
 
-    /**
-     * Adiciona paginação
-     */
     range(from: number, to: number): this {
         this.query = this.query.range(from, to);
         return this;
     }
-    
-    /**
-     * Adiciona paginação usando página e tamanho
-     */
+
     paginate(page: number = 1, pageSize: number = 20): this {
         const from = (page - 1) * pageSize;
         const to = from + pageSize - 1;
         return this.range(from, to);
     }
 
-    /**
-     * Retorna apenas um resultado (single)
-     * Lança erro se não encontrar ou encontrar múltiplos
-     */
     single(): this {
         this.query = this.query.single();
         return this;
     }
 
-    /**
-     * Retorna apenas um resultado ou null se não encontrar (maybeSingle)
-     * Não lança erro se não encontrar, apenas retorna null
-     */
     maybeSingle(): this {
         this.query = this.query.maybeSingle();
         return this;
     }
 
-    /**
-     * Executa a query e retorna os dados
-     */
     async execute<T = unknown>(): Promise<T> {
         const { data, error } = await this.query;
-        
         if (error) {
             throw new DatabaseError(
                 `Erro ao executar query na tabela ${this.tableName}: ${error.message}`,
                 error
             );
         }
-        
         return data as T;
     }
 
-    /**
-     * Executa a query e retorna dados com count em uma única requisição
-     * Otimiza performance eliminando chamada separada de count
-     * Requer que select() tenha sido chamado com { count: 'exact' }
-     */
     async executeWithCount<T = unknown>(): Promise<QueryResultWithCount<T>> {
         const { data, count, error } = await this.query;
-        
         if (error) {
             throw new DatabaseError(
                 `Erro ao executar query na tabela ${this.tableName}: ${error.message}`,
                 error
             );
         }
-        
-        return {
-            data: (data || []) as T[],
-            count: count
-        };
+        return { data: (data || []) as T[], count };
     }
 
-    /**
-     * Executa INSERT
-     */
     async insert<T = unknown>(data: unknown): Promise<T> {
         const { data: result, error } = await this.query.insert(data).select();
-        
         if (error) {
             throw new DatabaseError(
                 `Erro ao inserir na tabela ${this.tableName}: ${error.message}`,
                 error
             );
         }
-        
         return result as T;
     }
 
     /**
-     * Executa UPDATE
-     * ✅ Constrói a query na ordem correta do Supabase: .update(data).eq(field, value)
-     * Os filtros WHERE aplicados anteriormente são reaplicados após o update
+     * Executa UPDATE.
+     * Supabase requires the order: .from(table).update(data).eq(field, value)
+     * so WHERE conditions stored in whereConditions[] are reapplied after .update().
      */
     async update<T = unknown>(data: unknown): Promise<T> {
-        // O Supabase exige a ordem: .from(table).update(data).eq(field, value)
-        // Não é possível fazer .from(table).eq(field, value).update(data)
-        // Por isso reconstruímos a query aplicando os filtros após o update
-        const baseQuery = this.client.from(this.tableName).update(data as object).select();
+        let query: ReturnType<SupabaseClient['from']> =
+            this.client.from(this.tableName).update(data as object).select() as any;
 
-        // Reaplicar os filtros WHERE que foram acumulados em this.whereConditions
-        let finalQuery = baseQuery;
-        for (const condition of this.whereConditions) {
-            const { field, operator, value } = condition;
-            if (operator === 'eq') {
-                finalQuery = (finalQuery as any).eq(field, value);
-            } else if (operator === 'neq') {
-                finalQuery = (finalQuery as any).neq(field, value);
-            } else if (operator === 'gt') {
-                finalQuery = (finalQuery as any).gt(field, value);
-            } else if (operator === 'gte') {
-                finalQuery = (finalQuery as any).gte(field, value);
-            } else if (operator === 'lt') {
-                finalQuery = (finalQuery as any).lt(field, value);
-            } else if (operator === 'lte') {
-                finalQuery = (finalQuery as any).lte(field, value);
-            } else if (operator === 'in') {
-                finalQuery = (finalQuery as any).in(field, value);
-            }
+        for (const { field, operator, value } of this.whereConditions) {
+            query = this.applyOperator(query, field, operator, value);
         }
 
-        const { data: result, error } = await finalQuery;
-
+        const { data: result, error } = await (query as any);
         if (error) {
             throw new DatabaseError(
                 `Erro ao atualizar na tabela ${this.tableName}: ${error.message}`,
                 error
             );
         }
-
         return result as T;
     }
 
-    /**
-     * Executa DELETE
-     */
     async delete(): Promise<void> {
         const { error } = await this.query.delete();
-        
         if (error) {
             throw new DatabaseError(
                 `Erro ao deletar da tabela ${this.tableName}: ${error.message}`,
@@ -357,60 +251,33 @@ export class QueryBuilder {
         let query = this.client
             .from(this.tableName)
             .select('*', { count: 'exact', head: true });
-        
-        // ✅ Aplicar filtros corretamente (incluindo múltiplos operadores)
-        Object.entries(filters).forEach(([field, value]) => {
-            if (value === null || value === undefined) return;
-            
+
+        for (const [field, value] of Object.entries(filters)) {
+            if (value === null || value === undefined) continue;
+
             if (typeof value === 'object' && !Array.isArray(value) && !(value instanceof Date)) {
-                const valueObj = value as { 
-                    gte?: unknown; 
-                    lte?: unknown; 
-                    gt?: unknown; 
-                    lt?: unknown;
-                    eq?: unknown;
-                    in?: unknown[];
-                    ilike?: string;
-                    like?: string;
-                };
-                
-                // ✅ Aplicar múltiplos operadores quando necessário (ex: gte + lte para range de datas)
-                if (valueObj.gte !== undefined) {
-                    query = query.gte(field, valueObj.gte);
+                const v = value as Record<string, unknown>;
+                const ops: Array<[string, QueryOperator]> = [
+                    ['gte', 'gte'], ['lte', 'lte'], ['gt', 'gt'], ['lt', 'lt'],
+                    ['eq', 'eq'], ['ilike', 'ilike'], ['like', 'like'],
+                ];
+                for (const [key, op] of ops) {
+                    if (v[key] !== undefined) {
+                        query = (query as any)[op](field, v[key]);
+                    }
                 }
-                if (valueObj.lte !== undefined) {
-                    query = query.lte(field, valueObj.lte);
-                }
-                if (valueObj.gt !== undefined) {
-                    query = query.gt(field, valueObj.gt);
-                }
-                if (valueObj.lt !== undefined) {
-                    query = query.lt(field, valueObj.lt);
-                }
-                if (valueObj.eq !== undefined) {
-                    query = query.eq(field, valueObj.eq);
-                }
-                if (valueObj.in !== undefined && Array.isArray(valueObj.in)) {
-                    query = query.in(field, valueObj.in);
-                }
-                if (valueObj.ilike !== undefined) {
-                    query = query.ilike(field, valueObj.ilike);
-                }
-                if (valueObj.like !== undefined) {
-                    query = query.like(field, valueObj.like);
+                if (v['in'] !== undefined && Array.isArray(v['in'])) {
+                    query = (query as any).in(field, v['in']);
                 }
             } else {
                 query = query.eq(field, value);
             }
-        });
-        
+        }
+
         const { count, error } = await query;
-        
         if (error) {
             throw new Error(`Erro ao contar registros: ${error.message}`);
         }
-        
         return count || 0;
     }
 }
-
