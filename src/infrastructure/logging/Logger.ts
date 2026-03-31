@@ -89,9 +89,14 @@ export class Logger implements ILogger {
             
             console.error('Error:', errorMessage, errorStack ? `\nStack: ${errorStack}` : '', sanitizedContext);
         } else {
-            // Em produção, apenas logar mensagem genérica
-            console.error('An error occurred');
-            
+            // Em produção: logar tipo + mensagem do erro (sem dados sensíveis) para facilitar diagnóstico
+            const errorName = error instanceof Error ? error.name : 'UnknownError';
+            const errorMsg = error instanceof Error ? error.message : String(sanitizedError);
+            const ctx = sanitizedContext && typeof sanitizedContext === 'object'
+                ? (sanitizedContext as Record<string, unknown>)['context'] ?? ''
+                : '';
+            console.error('An error occurred', errorName, errorMsg, ctx ? `[${ctx}]` : '')
+
             // Enviar para serviço de logging em produção (Sentry, etc.)
             // sendToLoggingService(sanitizedError, sanitizedContext);
         }

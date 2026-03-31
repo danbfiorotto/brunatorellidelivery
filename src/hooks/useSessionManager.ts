@@ -289,8 +289,10 @@ export function useSessionManager(config: SessionManagerConfig = {}) {
             } catch (error) {
                 const errorMessage = error instanceof Error ? error.message : String(error);
                 const isTimeout = errorMessage.includes('timeout');
-                
-                logger.error('useSessionManager - Session check failed', {
+
+                // Usar warn (não error) aqui pois o chamador já trata o erro via .catch()
+                // Usar error causaria double-log em produção ("An error occurred" duas vezes)
+                logger.warn('useSessionManager - Session check failed', {
                     checkId,
                     reason,
                     error,
