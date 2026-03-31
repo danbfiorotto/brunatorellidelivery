@@ -34,6 +34,9 @@ interface SessionManagerConfig {
 interface IAuthClient {
     getSession: () => Promise<{ user?: { id: string } } | null>;
     refreshSession?: () => Promise<unknown>;
+    onAuthStateChange?: (
+        callback: (event: string, session: { user?: { id: string } } | null) => void
+    ) => { data: { subscription: { unsubscribe: () => void } } };
 }
 
 /**
@@ -68,8 +71,8 @@ export function useSessionManager(config: SessionManagerConfig = {}) {
     const currentCheckIdRef = useRef<number>(0); // ID do check atual (para garantir finally correto)
     const didInitRef = useRef<boolean>(false); // Prevenir múltiplos checks "initial"
     const [sessionState, setSessionState] = useState<'loading' | 'ready' | 'invalid'>('loading');
-    const SESSION_CHECK_TIMEOUT_MS = 5000; // 5 segundos (session check deve ser rápido - apenas getSession local)
-    const REFRESH_TIMEOUT_MS = 8000; // 8 segundos para refresh (requer rede)
+    const SESSION_CHECK_TIMEOUT_MS = 10000; // 10 segundos (getSession pode precisar de rede para refresh após sleep)
+    const REFRESH_TIMEOUT_MS = 15000; // 15 segundos para refresh (requer rede)
     
     /**
      * Verifica e atualiza a sessão se necessário
@@ -368,7 +371,12 @@ export function useSessionManager(config: SessionManagerConfig = {}) {
             // onResetStates?.(); // Removido - não resetar form/modal automaticamente
             
             // Verificar e refresh sessão (singleflight já previne múltiplas chamadas)
-            checkAndRefreshSession(false, 'visibility');
+            checkAndRefreshSession(false, 'visibility').catch((error) => {
+                logger.warn('useSessionManager - Visibility session check failed (ignored)', {
+                    error: error instanceof Error ? error.message : String(error),
+                    timestamp: Date.now()
+                });
+            });
         } else {
             logger.info('useSessionManager - Page became hidden', { timestamp });
         }
@@ -413,7 +421,12 @@ export function useSessionManager(config: SessionManagerConfig = {}) {
         
         // Só verificar se passou mais de 5 segundos
         if (timeSinceLastCheck > 5000) {
-            checkAndRefreshSession(false, 'focus');
+            checkAndRefreshSession(false, 'focus').catch((error) => {
+                logger.warn('useSessionManager - Focus session check failed (ignored)', {
+                    error: error instanceof Error ? error.message : String(error),
+                    timestamp: Date.now()
+                });
+            });
         }
     }, [checkAndRefreshSession]);
     
@@ -422,7 +435,12 @@ export function useSessionManager(config: SessionManagerConfig = {}) {
      */
     const handleOnline = useCallback(() => {
         logger.debug('useSessionManager - Device online');
-        checkAndRefreshSession(false, 'online');
+        checkAndRefreshSession(false, 'online').catch((error) => {
+            logger.warn('useSessionManager - Online session check failed (ignored)', {
+                error: error instanceof Error ? error.message : String(error),
+                timestamp: Date.now()
+            });
+        });
     }, [checkAndRefreshSession]);
     
     /**
@@ -443,6 +461,35 @@ export function useSessionManager(config: SessionManagerConfig = {}) {
         }
     }, [onPageHide]);
     
+    // Assinar onAuthStateChange do Supabase para manter sessionState atualizado de forma reativa.
+    // Quando o Supabase renova o token automaticamente (TOKEN_REFRESHED), atualizamos o estado
+    // sem precisar chamar getSession() no visibilitychange — evitando timeouts após browser sleep.
+    useEffect(() => {
+        const authClient = container.resolve('authClient') as IAuthClient | undefined;
+        if (!authClient?.onAuthStateChange) return;
+
+        const { data: { subscription } } = authClient.onAuthStateChange((event, session) => {
+            const timestamp = Date.now();
+            logger.info('useSessionManager - Auth state change', { event, timestamp, userId: session?.user?.id });
+
+            if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+                setSessionState('ready');
+                lastOkAtRef.current = timestamp;
+                lastCheckRef.current = timestamp;
+                if (event === 'TOKEN_REFRESHED') {
+                    onSessionRefresh?.();
+                }
+            } else if (event === 'SIGNED_OUT') {
+                setSessionState('invalid');
+                onSessionExpired?.();
+            }
+        });
+
+        return () => {
+            subscription.unsubscribe();
+        };
+    }, [container, onSessionRefresh, onSessionExpired]);
+
     // Setup de event listeners
     useEffect(() => {
         // Visibility change

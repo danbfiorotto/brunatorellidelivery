@@ -1424,6 +1424,15 @@ const Appointments: React.FC = () => {
                 }
             };
 
+            // Aviso antecipado se a operação demorar mais de 8 segundos (pode acontecer após browser sleep)
+            const earlyWarningTimerId = setTimeout(() => {
+                logger.warn('performSubmit - Operation taking longer than expected (8s warning)', {
+                    timestamp: Date.now(),
+                    operationId
+                });
+                showWarning('A operação está demorando mais que o esperado...');
+            }, 8000);
+
             try {
                 // Envolver com timeout e AbortController
                 const result = await withTimeout(
@@ -1434,16 +1443,8 @@ const Appointments: React.FC = () => {
                         return await attemptSave(signal);
                     },
                     {
-                        timeout: 8000, // 8 segundos (timeout curto para evitar travamentos)
+                        timeout: 20000, // 20 segundos (permite reconexão após browser sleep/troca de janela)
                         abortController,
-                        onTimeout: () => {
-                            logger.warn('performSubmit - Operation timeout warning', {
-                                timestamp: Date.now(),
-                                operationId,
-                                timeoutMs: 8000
-                            });
-                            showWarning('A operação está demorando mais que o esperado...');
-                        },
                         onAbort: () => {
                             logger.info('performSubmit - Operation aborted via AbortController', {
                                 timestamp: Date.now(),
@@ -1452,13 +1453,15 @@ const Appointments: React.FC = () => {
                         }
                     }
                 );
-                
+
+                clearTimeout(earlyWarningTimerId);
                 appointmentId = result.appointmentId;
                 patientId = result.patientId;
             } catch (saveError) {
+                clearTimeout(earlyWarningTimerId);
                 // Limpar AbortController
                 abortControllersRef.current.delete(operationId);
-                
+
                 // Tratar erros específicos
                 if (saveError instanceof AbortedError) {
                     logger.info('performSubmit - Save operation was aborted', {
@@ -1518,7 +1521,7 @@ const Appointments: React.FC = () => {
                                 return await attemptSave(signal);
                             },
                             {
-                                timeout: 8000, // 8 segundos para retry
+                                timeout: 20000, // 20 segundos para retry
                                 abortController: retryController,
                             }
                         );
