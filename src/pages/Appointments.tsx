@@ -1141,20 +1141,20 @@ const Appointments: React.FC = () => {
             // Check if procedure exists in the list, if not, set to "outros" and fill custom_procedure
             const procedureExists = procedures.some((p: Procedure) => p.name === appointment.procedure);
             const editFormData: AppointmentFormData = {
-                clinic_id: appointment.clinic_id || '',
+                clinic_id: (appointment as any).clinicId || appointment.clinic_id || '',
                 date: (appointment as any).dateString || (typeof appointment.date === 'string' ? appointment.date : ''),
                 time: appointment.time || '',
                 patient_name: appointment.patients?.name || '',
                 patient_phone: appointment.patients?.phone ? formatPhoneNumber(appointment.patients.phone) : '',
                 patient_email: appointment.patients?.email || '',
-                patient_id: appointment.patient_id || '',
+                patient_id: (appointment as any).patientId || appointment.patient_id || '',
                 procedure: procedureExists ? appointment.procedure : 'outros',
                 custom_procedure: procedureExists ? '' : appointment.procedure || '',
                 value: appointment.value ? String((appointment.value as any).amount) : '',
                 currency: (appointment.value as any)?.currency || 'BRL',
                 payment_type: (appointment as any).paymentType?.type || '100',
                 payment_percentage: (appointment as any).paymentType?.percentage ? String((appointment as any).paymentType.percentage) : '',
-                is_paid: appointment.is_paid || appointment.status === 'paid',
+                is_paid: (appointment as any).isPaid ?? appointment.is_paid ?? appointment.status === 'paid',
                 payment_date: (appointment as any).paymentDateString || (typeof appointment.payment_date === 'string' ? appointment.payment_date : '') || '',
                 clinical_evolution: appointment.clinical_evolution || '',
                 notes: appointment.notes || '',
