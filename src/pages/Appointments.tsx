@@ -1156,8 +1156,8 @@ const Appointments: React.FC = () => {
                 payment_percentage: (appointment as any).paymentType?.percentage ? String((appointment as any).paymentType.percentage) : '',
                 is_paid: (appointment as any).isPaid ?? appointment.is_paid ?? appointment.status === 'paid',
                 payment_date: (appointment as any).paymentDateString || (typeof appointment.payment_date === 'string' ? appointment.payment_date : '') || '',
-                clinical_evolution: appointment.clinical_evolution || '',
-                notes: appointment.notes || '',
+                clinical_evolution: (appointment as any).clinicalEvolution ?? appointment.clinical_evolution ?? '',
+                notes: (appointment as any).notes ?? appointment.notes ?? '',
                 radiographs: []
             };
             
