@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, FormEvent, ChangeEvent, MouseEvent } from 'react';
-import { Plus, Calendar, DollarSign, User, Building2, Search, Clock, Edit2, Trash2, Upload, Mail, Phone, ArrowUp, ArrowDown, Wifi, WifiOff } from 'lucide-react';
+import { Plus, Calendar, DollarSign, User, Building2, Search, Clock, Edit2, Trash2, Upload, Mail, Phone, ArrowUp, ArrowDown, Wifi, WifiOff, Eye } from 'lucide-react';
 import { motion, Variants } from 'framer-motion';
 import Card from '../components/UI/Card';
 import Button from '../components/UI/Button';
@@ -176,6 +176,7 @@ const Appointments: React.FC = () => {
     );
     
     const [editingAppointment, setEditingAppointment] = useState<Appointment | null>(null);
+    const [viewingAppointment, setViewingAppointment] = useState<Appointment | null>(null);
     const [uploadingFiles, setUploadingFiles] = useState<boolean>(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const formRef = useRef<HTMLFormElement>(null);
@@ -2090,7 +2091,14 @@ const Appointments: React.FC = () => {
                                 </TableCell>
                                 <TableCell>
                                     <div className="flex items-center gap-2">
-                                        <button 
+                                        <button
+                                            onClick={() => setViewingAppointment(app)}
+                                            className="p-2 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-lg text-gray-400 dark:text-gray-500 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
+                                            title="Visualizar"
+                                        >
+                                            <Eye size={18} />
+                                        </button>
+                                        <button
                                             onClick={() => handleOpenModal(app)}
                                             className="p-2 hover:bg-sky-50 dark:hover:bg-gray-700 rounded-lg text-gray-400 dark:text-gray-500 hover:text-sky-600 dark:hover:text-sky-400 transition-colors"
                                             title="Editar"
@@ -2831,6 +2839,151 @@ const Appointments: React.FC = () => {
                 onCancel={() => setDeleteConfirm({ isOpen: false, id: null })}
                 variant="danger"
             />
+
+            {/* View Appointment Modal */}
+            <Modal
+                isOpen={viewingAppointment !== null}
+                onClose={() => setViewingAppointment(null)}
+                title="Ficha do Atendimento"
+                size="xl"
+            >
+                {viewingAppointment && (() => {
+                    const app = viewingAppointment;
+                    const isPaid = (app as any).isPaid ?? app.is_paid;
+                    const paymentDate = (app as any).paymentDateString || (typeof app.payment_date === 'string' ? app.payment_date : null);
+                    const clinicalEvolution = (app as any).clinicalEvolution ?? app.clinical_evolution;
+                    const notes = (app as any).notes ?? app.notes;
+                    const paymentType = (app as any).paymentType?.type || app.payment_type;
+                    const paymentPercentage = (app as any).paymentType?.percentage ?? app.payment_percentage;
+                    const valueAmount = (app.value as any)?.amount ?? app.value;
+                    const valueCurrency = (app.value as any)?.currency || app.currency || currency;
+
+                    return (
+                        <div className="space-y-6">
+                            {/* Header: paciente + status */}
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-sky-100 to-blue-100 flex items-center justify-center text-sky-700 font-bold text-lg">
+                                        {app.patients?.name?.charAt(0) || 'P'}
+                                    </div>
+                                    <div>
+                                        <p className="text-lg font-semibold text-slate-900 dark:text-white">{sanitizeText(app.patients?.name) || 'Paciente'}</p>
+                                        {app.patients?.phone && (
+                                            <p className="text-sm text-slate-500 dark:text-gray-400 flex items-center gap-1">
+                                                <Phone size={13} />
+                                                {formatPhoneNumber(app.patients.phone)}
+                                            </p>
+                                        )}
+                                    </div>
+                                </div>
+                                <div>{getStatusBadge(app.status)}</div>
+                            </div>
+
+                            <hr className="border-slate-200 dark:border-gray-700" />
+
+                            {/* Grid de dados principais */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div>
+                                    <p className="text-xs font-semibold text-slate-500 dark:text-gray-400 uppercase tracking-wide mb-1">Data e Hora</p>
+                                    <p className="text-sm text-slate-800 dark:text-white flex items-center gap-1.5">
+                                        <Calendar size={14} className="text-slate-400" />
+                                        {formatDate(app.date)} às {formatTime(app.time)}
+                                    </p>
+                                </div>
+                                <div>
+                                    <p className="text-xs font-semibold text-slate-500 dark:text-gray-400 uppercase tracking-wide mb-1">Clínica</p>
+                                    <p className="text-sm text-slate-800 dark:text-white flex items-center gap-1.5">
+                                        <Building2 size={14} className="text-slate-400" />
+                                        {sanitizeText(app.clinics?.name) || 'Clínica'}
+                                    </p>
+                                </div>
+                                <div>
+                                    <p className="text-xs font-semibold text-slate-500 dark:text-gray-400 uppercase tracking-wide mb-1">Procedimento</p>
+                                    <p className="text-sm text-slate-800 dark:text-white">{sanitizeText(app.procedure)}</p>
+                                </div>
+                                <div>
+                                    <p className="text-xs font-semibold text-slate-500 dark:text-gray-400 uppercase tracking-wide mb-1">E-mail</p>
+                                    <p className="text-sm text-slate-800 dark:text-white flex items-center gap-1.5">
+                                        <Mail size={14} className="text-slate-400" />
+                                        {app.patients?.email || '—'}
+                                    </p>
+                                </div>
+                            </div>
+
+                            <hr className="border-slate-200 dark:border-gray-700" />
+
+                            {/* Financeiro */}
+                            <div>
+                                <p className="text-xs font-semibold text-slate-500 dark:text-gray-400 uppercase tracking-wide mb-3">Financeiro</p>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div>
+                                        <p className="text-xs text-slate-500 dark:text-gray-400 mb-1">Valor</p>
+                                        <p className="text-sm font-semibold text-slate-800 dark:text-white">
+                                            {formatCurrency(Number(valueAmount), valueCurrency)}
+                                        </p>
+                                    </div>
+                                    {paymentType === 'percentage' && paymentPercentage && (
+                                        <div>
+                                            <p className="text-xs text-slate-500 dark:text-gray-400 mb-1">Repasse ({paymentPercentage}%)</p>
+                                            <p className="text-sm font-semibold text-slate-800 dark:text-white">
+                                                {formatCurrency(Number(valueAmount) * paymentPercentage / 100, valueCurrency)}
+                                            </p>
+                                        </div>
+                                    )}
+                                    <div>
+                                        <p className="text-xs text-slate-500 dark:text-gray-400 mb-1">Pagamento</p>
+                                        <p className="text-sm text-slate-800 dark:text-white">
+                                            {isPaid ? (
+                                                <span className="text-emerald-600 dark:text-emerald-400 font-medium">
+                                                    Pago{paymentDate ? ` em ${formatDate(paymentDate)}` : ''}
+                                                </span>
+                                            ) : (
+                                                <span className="text-amber-600 dark:text-amber-400 font-medium">Pendente</span>
+                                            )}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Evolução clínica */}
+                            {clinicalEvolution && (
+                                <>
+                                    <hr className="border-slate-200 dark:border-gray-700" />
+                                    <div>
+                                        <p className="text-xs font-semibold text-slate-500 dark:text-gray-400 uppercase tracking-wide mb-2">Evolução Clínica</p>
+                                        <p className="text-sm text-slate-800 dark:text-white whitespace-pre-wrap bg-slate-50 dark:bg-gray-800 rounded-lg p-3">
+                                            {sanitizeText(clinicalEvolution)}
+                                        </p>
+                                    </div>
+                                </>
+                            )}
+
+                            {/* Observações */}
+                            {notes && (
+                                <>
+                                    <hr className="border-slate-200 dark:border-gray-700" />
+                                    <div>
+                                        <p className="text-xs font-semibold text-slate-500 dark:text-gray-400 uppercase tracking-wide mb-2">Observações</p>
+                                        <p className="text-sm text-slate-800 dark:text-white whitespace-pre-wrap bg-slate-50 dark:bg-gray-800 rounded-lg p-3">
+                                            {sanitizeText(notes)}
+                                        </p>
+                                    </div>
+                                </>
+                            )}
+
+                            {/* Botão fechar */}
+                            <div className="flex justify-end pt-2">
+                                <button
+                                    onClick={() => setViewingAppointment(null)}
+                                    className="px-4 py-2 rounded-lg bg-slate-100 dark:bg-gray-700 text-slate-700 dark:text-gray-200 text-sm font-medium hover:bg-slate-200 dark:hover:bg-gray-600 transition-colors"
+                                >
+                                    Fechar
+                                </button>
+                            </div>
+                        </div>
+                    );
+                })()}
+            </Modal>
         </motion.div>
     );
 };
